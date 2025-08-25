@@ -7,6 +7,15 @@
 [![codecov](https://codecov.io/gh/invopop/jsonschema/graph/badge.svg?token=JMEB8W8GNZ)](https://codecov.io/gh/invopop/jsonschema)
 ![Latest Tag](https://img.shields.io/github/v/tag/invopop/jsonschema)
 
+## Fork Statement
+
+This repository is forked from [invopop/jsonschema](https://github.com/invopop/jsonschema). At [Eino](https://github.com/cloudwego/eino), we use JSONSchema as the tool parameters description. And we want to be able to continue to build and add new features to provide Eino with stable and reliable JSONSchema definition. There have been a few significant changes that probably mean this version is a not compatible with [Invopop](https://invopop.com)'s:
+- Add `TypeEnhanced` definition. Support enhanced `type` definition, which is an array of unique type strings and follows the JSONSchema standard.
+
+---
+
+## Original README
+
 This package can be used to generate [JSON Schemas](http://json-schema.org/latest/json-schema-validation.html) from Go types through reflection.
 
 - Supports arbitrarily complex types, including `interface{}`, maps, slices, etc.

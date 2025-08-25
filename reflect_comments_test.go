@@ -7,9 +7,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/eino-contrib/jsonschema/examples"
 	"github.com/stretchr/testify/require"
-
-	"github.com/invopop/jsonschema/examples"
 )
 
 func TestCommentsSchemaGeneration(t *testing.T) {

@@ -664,3 +664,44 @@ func TestJSONSchemaAlias(t *testing.T) {
 	compareSchemaOutput(t, "fixtures/schema_alias.json", r, &AliasObjectB{})
 	compareSchemaOutput(t, "fixtures/schema_alias_2.json", r, &AliasObjectC{})
 }
+
+func TestMarshalSchemaType(t *testing.T) {
+	sc := &Schema{
+		TypeEnhanced: []string{"string", "number"},
+	}
+
+	b, err := json.Marshal(sc)
+	require.NoError(t, err)
+	require.Equal(t, string(b), `{"type":["string","number"]}`)
+
+	sc = &Schema{
+		Type:         "string",
+		TypeEnhanced: []string{"string", "number"},
+	}
+	b, err = json.Marshal(sc)
+	require.Error(t, err)
+}
+
+func TestUnmarshalSchemaType(t *testing.T) {
+	sc := &Schema{}
+	err := json.Unmarshal([]byte(`{"type":["string","number"]}`), sc)
+	require.NoError(t, err)
+	require.Equal(t, sc.TypeEnhanced, []string{"string", "number"})
+
+	sc = &Schema{}
+	err = json.Unmarshal([]byte(`{"type":"string"}`), sc)
+	require.NoError(t, err)
+	require.Equal(t, sc.Type, "string")
+	require.Nil(t, sc.TypeEnhanced)
+
+	sc = &Schema{}
+	err = json.Unmarshal([]byte(`{}`), sc)
+	require.NoError(t, err)
+	require.Equal(t, sc.Type, "")
+	require.Nil(t, sc.TypeEnhanced)
+
+	sc = &Schema{}
+	err = json.Unmarshal([]byte(`{"type":[]}`), sc)
+	require.NoError(t, err)
+	require.NotNil(t, sc.TypeEnhanced)
+}
