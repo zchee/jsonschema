@@ -9,6 +9,7 @@ package jsonschema
 import (
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/url"
 	"reflect"
@@ -1069,13 +1070,26 @@ func (t *Schema) UnmarshalJSON(data []byte) error {
 		*t = *FalseSchema
 		return nil
 	}
+
 	type SchemaAlt Schema
-	aux := &struct {
-		*SchemaAlt
+
+	s := struct {
+		*SchemaAlt `json:",inline"`
+		TypeUnion  *typeUnion `json:"type"`
 	}{
 		SchemaAlt: (*SchemaAlt)(t),
+		TypeUnion: &typeUnion{},
 	}
-	return json.Unmarshal(data, aux)
+
+	err := json.Unmarshal(data, &s)
+	if err != nil {
+		return err
+	}
+
+	s.TypeEnhanced = s.TypeUnion.TypeEnhanced
+	s.Type = s.TypeUnion.Type
+
+	return nil
 }
 
 // MarshalJSON is used to serialize a schema object or boolean.
@@ -1090,23 +1104,81 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 		// Don't bother returning empty schemas
 		return []byte("true"), nil
 	}
+
 	type SchemaAlt Schema
-	b, err := json.Marshal((*SchemaAlt)(t))
+
+	s := struct {
+		*SchemaAlt `json:",inline"`
+		TypeUnion  *typeUnion `json:"type"`
+	}{
+		SchemaAlt: (*SchemaAlt)(t),
+		TypeUnion: &typeUnion{
+			Type:         t.Type,
+			TypeEnhanced: t.TypeEnhanced,
+		},
+	}
+
+	b, err := json.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(t.Extras) == 0 {
 		return b, nil
 	}
+
 	m, err := json.Marshal(t.Extras)
 	if err != nil {
 		return nil, err
 	}
+
 	if len(b) == 2 {
 		return m, nil
 	}
+
 	b[len(b)-1] = ','
+
 	return append(b, m[1:]...), nil
+}
+
+func (t *typeUnion) MarshalJSON() ([]byte, error) {
+	if t.Type != "" && t.TypeEnhanced != nil {
+		return nil, fmt.Errorf("'Type' and 'TypeEnhanced' cannot be set at the same time")
+	}
+	if t.TypeEnhanced != nil {
+		return json.Marshal(t.TypeEnhanced)
+	}
+	return json.Marshal(t.Type)
+}
+
+func (t *typeUnion) UnmarshalJSON(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+
+	var val any
+	err := json.Unmarshal(data, &val)
+	if err != nil {
+		return err
+	}
+
+	switch asVal := val.(type) {
+	case string:
+		t.Type = asVal
+	case []any:
+		t.TypeEnhanced = []string{}
+		for _, v := range asVal {
+			v_, ok := v.(string)
+			if !ok {
+				return fmt.Errorf("keyword 'type' must be of type 'string' or '[]string'")
+			}
+			t.TypeEnhanced = append(t.TypeEnhanced, v_)
+		}
+	default:
+		return fmt.Errorf("keyword 'type' must be of type 'string' or '[]string'")
+	}
+
+	return nil
 }
 
 func (r *Reflector) typeName(t reflect.Type) string {

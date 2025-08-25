@@ -39,8 +39,20 @@ type Schema struct {
 	PatternProperties    map[string]*Schema                      `json:"patternProperties,omitempty"`    // section 10.3.2.2
 	AdditionalProperties *Schema                                 `json:"additionalProperties,omitempty"` // section 10.3.2.3
 	PropertyNames        *Schema                                 `json:"propertyNames,omitempty"`        // section 10.3.2.4
-	// RFC draft-bhutton-json-schema-validation-00, section 6
-	Type              string              `json:"type,omitempty"`              // section 6.1.1
+
+	// Type is the instance data model type (RFC draft-bhutton-json-schema-validation-00, section 6).
+	// The keyword in JSON Schema is "type".
+	Type string `json:"-"` // section 6.1.1
+
+	// TypeEnhanced is an enhanced description of the instance data model type (RFC draft-bhutton-json-schema-validation-00, section 6).
+	// The keyword in JSON Schema is "type".
+	// In most cases, you won't need it.
+	// You can only set one of Type and TypeEnhanced.
+	// When marshalling to JSON Schema string, if TypeEnhanced is not nil, the `type` keyword will be of type Array<String>.
+	// When unmarshalling from JSON Schema string, if the `type` keyword is of type Array<String>, it will be unmarshalled into the TypeEnhanced field.
+	// Optional.
+	TypeEnhanced []string `json:"-"` // section 6.1.1
+
 	Enum              []any               `json:"enum,omitempty"`              // section 6.1.2
 	Const             any                 `json:"const,omitempty"`             // section 6.1.3
 	MultipleOf        json.Number         `json:"multipleOf,omitempty"`        // section 6.2.1
@@ -79,6 +91,11 @@ type Schema struct {
 
 	// Special boolean representation of the Schema - section 4.3.2
 	boolean *bool
+}
+
+type typeUnion struct {
+	Type         string
+	TypeEnhanced []string
 }
 
 var (

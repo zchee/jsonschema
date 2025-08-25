@@ -3,7 +3,7 @@ package jsonschema_test
 import (
 	"testing"
 
-	"github.com/invopop/jsonschema"
+	"github.com/eino-contrib/jsonschema"
 	"github.com/stretchr/testify/assert"
 )
 
