@@ -705,3 +705,92 @@ func TestUnmarshalSchemaType(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, sc.TypeEnhanced)
 }
+
+func TestSchemaModifierFn(t *testing.T) {
+	type TestInnerB struct {
+		B string   `json:"b" jsonschema:"title=__TestStringB"`
+		C []string `json:"c" jsonschema:"title=__TestArrayC"`
+	}
+
+	type TestInnerA struct {
+		A string     `json:"a" jsonschema:"title=__TestStringA"`
+		B TestInnerB `json:"b" jsonschema:"title=__TestInnerB"`
+	}
+
+	type TestOuter struct {
+		A TestInnerA `json:"a" jsonschema:"title=__TestInnerA"`
+	}
+
+	modifier := func(name string, t reflect.Type, tag reflect.StructTag, schema *Schema) {
+		if name == "_root" {
+			schema.Title = "TestRoot"
+		}
+		if name == "a" && t == reflect.TypeOf(TestInnerA{}) && strings.Contains(tag.Get("jsonschema"), "__TestInnerA") {
+			schema.Title = "TestInnerA"
+		}
+		if name == "a" && t == reflect.TypeOf("") && strings.Contains(tag.Get("jsonschema"), "__TestStringA") {
+			schema.Title = "TestStringA"
+		}
+		if name == "b" && t == reflect.TypeOf(TestInnerB{}) && strings.Contains(tag.Get("jsonschema"), "__TestInnerB") {
+			schema.Title = "TestInnerB"
+		}
+		if name == "b" && t == reflect.TypeOf("") && strings.Contains(tag.Get("jsonschema"), "__TestStringB") {
+			schema.Title = "TestStringB"
+		}
+		if name == "c" && t == reflect.TypeOf([]string{}) && strings.Contains(tag.Get("jsonschema"), "__TestArrayC") {
+			schema.Title = "TestArrayC"
+		}
+	}
+
+	r := &Reflector{
+		DoNotReference: true,
+		SchemaModifier: modifier,
+	}
+
+	tests := []struct {
+		name   string
+		typ    reflect.Type
+		scType string
+	}{
+		{"TestStruct", reflect.TypeOf(TestOuter{}), "object"},
+		{"TestArray", reflect.TypeOf([]TestOuter{}), "array"},
+		{"TestArrayOfArray", reflect.TypeOf([][]TestOuter{}), "array"},
+	}
+
+	for _, tt := range tests {
+		sc := r.ReflectFromType(tt.typ)
+		require.Equal(t, sc.Type, tt.scType)
+
+		if sc.Type == "array" {
+			sc = sc.Items
+		}
+
+		if tt.name == "TestArrayOfArray" {
+			sc = sc.Items
+		}
+
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, sc.Title, "TestRoot")
+
+			aStruct, ok := sc.Properties.Get("a")
+			require.True(t, ok)
+			require.Equal(t, "TestInnerA", aStruct.Title)
+
+			aStr, ok := aStruct.Properties.Get("a")
+			require.True(t, ok)
+			require.Equal(t, "TestStringA", aStr.Title)
+
+			bStruct, ok := aStruct.Properties.Get("b")
+			require.True(t, ok)
+			require.Equal(t, "TestInnerB", bStruct.Title)
+
+			bStr, ok := bStruct.Properties.Get("b")
+			require.True(t, ok)
+			require.Equal(t, "TestStringB", bStr.Title)
+
+			cArray, ok := bStruct.Properties.Get("c")
+			require.True(t, ok)
+			require.Equal(t, "TestArrayC", cArray.Title)
+		})
+	}
+}
