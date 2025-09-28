@@ -61,8 +61,8 @@ var customStructGetFieldDocString = reflect.TypeOf((*customSchemaGetFieldDocStri
 
 // SchemaModifierFn is a callback function that will be called after the schema is generated.
 // This allows you to modify the schema dynamically.
-// NOTE: name will be "_root" for the top level object, and tag will be "".
-type SchemaModifierFn func(name string, t reflect.Type, tag reflect.StructTag, schema *Schema)
+// NOTE: `jsonTagName` will be "_root" for the top level object, and `tag` will be "".
+type SchemaModifierFn func(jsonTagName string, t reflect.Type, tag reflect.StructTag, schema *Schema)
 
 // Reflect reflects to Schema from a value using the default Reflector
 func Reflect(v any) *Schema {
