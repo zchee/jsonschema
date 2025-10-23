@@ -640,7 +640,7 @@ func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, p
 	case "boolean":
 		t.booleanKeywords(tags)
 	}
-	extras := strings.Split(f.Tag.Get("jsonschema_extras"), ",")
+	extras := splitOnUnescapedCommas(f.Tag.Get("jsonschema_extras"))
 	t.extraKeywords(extras)
 }
 
@@ -1032,7 +1032,7 @@ func (r *Reflector) reflectFieldName(f reflect.StructField) (string, bool, bool,
 		return "", false, false, false
 	}
 
-	schemaTags := strings.Split(f.Tag.Get("jsonschema"), ",")
+	schemaTags := splitOnUnescapedCommas(f.Tag.Get("jsonschema"))
 	if ignoredByJSONSchemaTags(schemaTags) {
 		return "", false, false, false
 	}
