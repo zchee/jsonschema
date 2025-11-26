@@ -17,9 +17,21 @@ func TestCommentsSchemaGeneration(t *testing.T) {
 		reflector *Reflector
 		fixture   string
 	}{
-		{&examples.User{}, prepareCommentReflector(t), "fixtures/go_comments.json"},
-		{&examples.User{}, prepareCommentReflector(t, WithFullComment()), "fixtures/go_comments_full.json"},
-		{&examples.User{}, prepareCustomCommentReflector(t), "fixtures/custom_comments.json"},
+		{
+			typ:       &examples.User{},
+			reflector: prepareCommentReflector(t),
+			fixture:   "fixtures/go_comments.json",
+		},
+		{
+			typ:       &examples.User{},
+			reflector: prepareCommentReflector(t, WithFullComment()),
+			fixture:   "fixtures/go_comments_full.json",
+		},
+		{
+			typ:       &examples.User{},
+			reflector: prepareCustomCommentReflector(t),
+			fixture:   "fixtures/custom_comments.json",
+		},
 	}
 	for _, tt := range tests {
 		name := strings.TrimSuffix(filepath.Base(tt.fixture), ".json")
@@ -43,7 +55,7 @@ func prepareCustomCommentReflector(t *testing.T) *Reflector {
 	t.Helper()
 	r := new(Reflector)
 	r.LookupComment = func(t reflect.Type, f string) string {
-		if t != reflect.TypeOf(examples.User{}) {
+		if t != reflect.TypeFor[examples.User]() {
 			// To test the interaction between a custom LookupComment function and the
 			// AddGoComments function, we only override comments for the User type.
 			return ""
