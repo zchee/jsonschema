@@ -52,21 +52,21 @@ func ExampleReflect() {
 	//           "type": "integer"
 	//         },
 	//         "name": {
-	//           "type": "string",
 	//           "title": "the name",
 	//           "description": "The name of a friend",
 	//           "default": "alex",
 	//           "examples": [
 	//             "joe",
 	//             "lucy"
-	//           ]
+	//           ],
+	//           "type": "string"
 	//         },
 	//         "friends": {
 	//           "items": {
 	//             "type": "integer"
 	//           },
-	//           "type": "array",
-	//           "description": "The list of IDs, omitted when empty"
+	//           "description": "The list of IDs, omitted when empty",
+	//           "type": "array"
 	//         },
 	//         "tags": {
 	//           "type": "object",
@@ -77,8 +77,8 @@ func ExampleReflect() {
 	//           ]
 	//         },
 	//         "birth_date": {
-	//           "type": "string",
-	//           "format": "date-time"
+	//           "format": "date-time",
+	//           "type": "string"
 	//         },
 	//         "year_of_birth": {
 	//           "type": "string"
@@ -94,20 +94,20 @@ func ExampleReflect() {
 	//           ]
 	//         },
 	//         "fav_color": {
-	//           "type": "string",
 	//           "enum": [
 	//             "red",
 	//             "green",
 	//             "blue"
-	//           ]
+	//           ],
+	//           "type": "string"
 	//         }
 	//       },
 	//       "additionalProperties": false,
-	//       "type": "object",
 	//       "required": [
 	//         "id",
 	//         "name"
-	//       ]
+	//       ],
+	//       "type": "object"
 	//     }
 	//   }
 	// }

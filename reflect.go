@@ -207,7 +207,7 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	if !r.Anonymous && s.ID == EmptyID {
 		baseSchemaID := r.BaseSchemaID
 		if baseSchemaID == EmptyID {
-			id := ID("https://" + t.PkgPath())
+			id := ID("https://" + canonicalPkgPath(t.PkgPath()))
 			if err := id.Validate(); err == nil {
 				// it's okay to silently ignore URL errors
 				baseSchemaID = id
@@ -554,7 +554,7 @@ func (r *Reflector) reflectStructFields(definitions Definitions, pName string, t
 
 		r.reflectSchemaExtend(definitions, f.Type, property)
 		if r.SchemaModifier != nil {
-			r.SchemaModifier(name, t, tag, st)
+			r.SchemaModifier(name, f.Type, f.Tag, property)
 		}
 
 		st.Properties.Set(name, property)
@@ -1123,15 +1123,20 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 
 	type SchemaAlt Schema
 
-	s := struct {
-		*SchemaAlt `json:",inline"`
-		TypeUnion  *typeUnion `json:"type"`
-	}{
-		SchemaAlt: (*SchemaAlt)(t),
-		TypeUnion: &typeUnion{
+	var union *typeUnion
+	if t.Type != "" || t.TypeEnhanced != nil {
+		union = &typeUnion{
 			Type:         t.Type,
 			TypeEnhanced: t.TypeEnhanced,
-		},
+		}
+	}
+
+	s := struct {
+		*SchemaAlt `json:",inline"`
+		TypeUnion  *typeUnion `json:"type,omitempty"`
+	}{
+		SchemaAlt: (*SchemaAlt)(t),
+		TypeUnion: union,
 	}
 
 	b, err := json.Marshal(s)
@@ -1232,5 +1237,5 @@ func splitOnUnescapedCommas(tagString string) []string {
 }
 
 func fullyQualifiedTypeName(t reflect.Type) string {
-	return t.PkgPath() + "." + t.Name()
+	return canonicalPkgPath(t.PkgPath()) + "." + t.Name()
 }
