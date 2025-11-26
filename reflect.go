@@ -10,9 +10,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"iter"
+	"maps"
 	"net"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -44,11 +47,15 @@ type propertyAliasSchemaImpl interface {
 	JSONSchemaProperty(prop string) any
 }
 
-var customAliasSchema = reflect.TypeOf((*aliasSchemaImpl)(nil)).Elem()
-var customPropertyAliasSchema = reflect.TypeOf((*propertyAliasSchemaImpl)(nil)).Elem()
+var (
+	customAliasSchema         = reflect.TypeFor[aliasSchemaImpl]()
+	customPropertyAliasSchema = reflect.TypeFor[propertyAliasSchemaImpl]()
+)
 
-var customType = reflect.TypeOf((*customSchemaImpl)(nil)).Elem()
-var extendType = reflect.TypeOf((*extendSchemaImpl)(nil)).Elem()
+var (
+	customType = reflect.TypeFor[customSchemaImpl]()
+	extendType = reflect.TypeFor[extendSchemaImpl]()
+)
 
 // customSchemaGetFieldDocString
 type customSchemaGetFieldDocString interface {
@@ -57,7 +64,7 @@ type customSchemaGetFieldDocString interface {
 
 type customGetFieldDocString func(fieldName string) string
 
-var customStructGetFieldDocString = reflect.TypeOf((*customSchemaGetFieldDocString)(nil)).Elem()
+var customStructGetFieldDocString = reflect.TypeFor[customSchemaGetFieldDocString]()
 
 // SchemaModifierFn is a callback function that will be called after the schema is generated.
 // This allows you to modify the schema dynamically.
@@ -186,7 +193,7 @@ func (r *Reflector) Reflect(v any) *Schema {
 
 // ReflectFromType generates root schema
 func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem() // re-assign from pointer
 	}
 
@@ -229,23 +236,23 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 // Available Go defined types for JSON Schema Validation.
 // RFC draft-wright-json-schema-validation-00, section 7.3
 var (
-	timeType = reflect.TypeOf(time.Time{}) // date-time RFC section 7.3.1
-	ipType   = reflect.TypeOf(net.IP{})    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
-	uriType  = reflect.TypeOf(url.URL{})   // uri RFC section 7.3.6
+	timeType = reflect.TypeFor[time.Time]() // date-time RFC section 7.3.1
+	ipType   = reflect.TypeFor[net.IP]()    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
+	uriType  = reflect.TypeFor[url.URL]()   // uri RFC section 7.3.6
 )
 
 // Byte slices will be encoded as base64
-var byteSliceType = reflect.TypeOf([]byte(nil))
+var byteSliceType = reflect.TypeFor[[]byte]()
 
 // Except for json.RawMessage
-var rawMessageType = reflect.TypeOf(json.RawMessage{})
+var rawMessageType = reflect.TypeFor[json.RawMessage]()
 
 // Go code generated from protobuf enum types should fulfil this interface.
 type protoEnum interface {
 	EnumDescriptor() ([]byte, []int)
 }
 
-var protoEnumType = reflect.TypeOf((*protoEnum)(nil)).Elem()
+var protoEnumType = reflect.TypeFor[protoEnum]()
 
 // SetBaseSchemaID is a helper use to be able to set the reflectors base
 // schema ID from a string as opposed to then ID instance.
@@ -284,7 +291,7 @@ func (r *Reflector) reflectTypeToSchemaWithID(defs Definitions, t reflect.Type, 
 
 func (r *Reflector) reflectTypeToSchema(definitions Definitions, name string, tag reflect.StructTag, t reflect.Type) *Schema {
 	// only try to reflect non-pointers
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return r.refOrReflectTypeToSchema(definitions, name, tag, t.Elem())
 	}
 
@@ -374,7 +381,7 @@ func (r *Reflector) reflectTypeToSchema(definitions Definitions, name string, ta
 }
 
 func (r *Reflector) reflectCustomSchema(definitions Definitions, t reflect.Type) *Schema {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		return r.reflectCustomSchema(definitions, t.Elem())
 	}
 
@@ -490,7 +497,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, name string, tag refl
 }
 
 func (r *Reflector) reflectStructFields(definitions Definitions, pName string, tag reflect.StructTag, st *Schema, t reflect.Type) {
-	if t.Kind() == reflect.Ptr {
+	if t.Kind() == reflect.Pointer {
 		t = t.Elem()
 	}
 	if t.Kind() != reflect.Struct {
@@ -577,7 +584,7 @@ func (r *Reflector) reflectStructFields(definitions Definitions, pName string, t
 }
 
 func appendUniqueString(base []string, value string) []string {
-	for _, v := range base {
+	for v := range slices.Values(base) {
 		if v == value {
 			return base
 		}
@@ -613,7 +620,7 @@ func (r *Reflector) refDefinition(definitions Definitions, t reflect.Type) *Sche
 
 func (r *Reflector) lookupID(t reflect.Type) ID {
 	if r.Lookup != nil {
-		if t.Kind() == reflect.Ptr {
+		if t.Kind() == reflect.Pointer {
 			t = t.Elem()
 		}
 		return r.Lookup(t)
@@ -947,12 +954,11 @@ func requiredFromJSONTags(tags []string, val *bool) {
 		return
 	}
 
-	for _, tag := range tags[1:] {
-		if tag == "omitempty" {
-			*val = false
-			return
-		}
+	if slices.Contains(tags[1:], "omitempty") {
+		*val = false
+		return
 	}
+
 	*val = true
 }
 
@@ -971,12 +977,8 @@ func nullableFromJSONSchemaTags(tags []string) bool {
 	if ignoredByJSONSchemaTags(tags) {
 		return false
 	}
-	for _, tag := range tags {
-		if tag == "nullable" {
-			return true
-		}
-	}
-	return false
+
+	return slices.Contains(tags, "nullable")
 }
 
 func ignoredByJSONTags(tags []string) bool {
@@ -988,12 +990,7 @@ func ignoredByJSONSchemaTags(tags []string) bool {
 }
 
 func inlinedByJSONTags(tags []string) bool {
-	for _, tag := range tags[1:] {
-		if tag == "inline" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tags[1:], "inline")
 }
 
 // toJSONNumber converts string to *json.Number.
@@ -1052,7 +1049,7 @@ func (r *Reflector) reflectFieldName(f reflect.StructField) (string, bool, bool,
 		}
 
 		// As per JSON Marshal rules, anonymous pointer to structs are inherited
-		if f.Type.Kind() == reflect.Ptr && f.Type.Elem().Kind() == reflect.Struct {
+		if f.Type.Kind() == reflect.Pointer && f.Type.Elem().Kind() == reflect.Struct {
 			return "", true, false, false
 		}
 	}
@@ -1123,20 +1120,18 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 
 	type SchemaAlt Schema
 
-	var union *typeUnion
-	if t.Type != "" || t.TypeEnhanced != nil {
-		union = &typeUnion{
-			Type:         t.Type,
-			TypeEnhanced: t.TypeEnhanced,
-		}
-	}
-
 	s := struct {
 		*SchemaAlt `json:",inline"`
 		TypeUnion  *typeUnion `json:"type,omitempty"`
 	}{
 		SchemaAlt: (*SchemaAlt)(t),
-		TypeUnion: union,
+		TypeUnion: func() *typeUnion {
+			tu := &typeUnion{Type: t.Type, TypeEnhanced: t.TypeEnhanced}
+			if tu.Type == "" && len(tu.TypeEnhanced) == 0 {
+				return nil
+			}
+			return tu
+		}(),
 	}
 
 	b, err := json.Marshal(s)
@@ -1144,11 +1139,12 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 		return nil, err
 	}
 
-	if len(t.Extras) == 0 {
+	extras := maps.Clone(t.Extras)
+	if len(extras) == 0 {
 		return b, nil
 	}
 
-	m, err := json.Marshal(t.Extras)
+	m, err := json.Marshal(extras)
 	if err != nil {
 		return nil, err
 	}
@@ -1214,26 +1210,55 @@ func (r *Reflector) typeName(t reflect.Type) string {
 // Split on commas that are not preceded by `\`.
 // This way, we prevent splitting regexes
 func splitOnUnescapedCommas(tagString string) []string {
-	ret := make([]string, 0)
-	separated := strings.Split(tagString, ",")
-	ret = append(ret, separated[0])
-	i := 0
-	for _, nextTag := range separated[1:] {
-		if len(ret[i]) == 0 {
-			ret = append(ret, nextTag)
-			i++
-			continue
+	parts := make([]string, 0, strings.Count(tagString, ",")+1)
+	return slices.AppendSeq(parts, splitOnUnescapedCommasSeq(tagString))
+}
+
+func splitOnUnescapedCommasSeq(tagString string) iter.Seq[string] {
+	return func(yield func(string) bool) {
+		if tagString == "" {
+			yield("")
+			return
 		}
 
-		if ret[i][len(ret[i])-1] == '\\' {
-			ret[i] = ret[i][:len(ret[i])-1] + "," + nextTag
-		} else {
-			ret = append(ret, nextTag)
-			i++
+		start := 0
+		var buf []byte
+
+		emit := func(end int, useBuf bool) bool {
+			if useBuf {
+				buf = append(buf, tagString[start:end]...)
+				defer func() { buf = buf[:0] }()
+				return yield(string(buf))
+			}
+
+			return yield(tagString[start:end])
 		}
+
+		for i := 0; i < len(tagString); i++ {
+			c := tagString[i]
+
+			if c == '\\' && i+1 < len(tagString) && tagString[i+1] == ',' {
+				if buf == nil {
+					buf = make([]byte, 0, len(tagString)-start)
+				}
+				buf = append(buf, tagString[start:i]...)
+				buf = append(buf, ',')
+				i++
+				start = i + 1
+				continue
+			}
+
+			if c == ',' {
+				if !emit(i, buf != nil) {
+					return
+				}
+				start = i + 1
+				continue
+			}
+		}
+
+		_ = emit(len(tagString), buf != nil)
 	}
-
-	return ret
 }
 
 func fullyQualifiedTypeName(t reflect.Type) string {
