@@ -4,8 +4,7 @@ import (
 	"regexp"
 	"strings"
 	"unicode"
-
-	orderedmap "github.com/wk8/go-ordered-map/v2"
+	"unicode/utf8"
 )
 
 var (
@@ -25,27 +24,79 @@ func ToSnakeCase(str string) string {
 		return ""
 	}
 
-	runes := []rune(str)
-	var b strings.Builder
-	b.Grow(len(str) + len(runes))
+	// ASCII fast path avoids rune decoding and reduces allocations for common identifiers.
+	if isASCII(str) {
+		var b strings.Builder
+		b.Grow(len(str) + len(str)/2 + 1)
 
-	for i, r := range runes {
-		if shouldInsertDash(runes, i) {
+		var prevLower, prevDigit bool
+		for i := 0; i < len(str); i++ {
+			c := str[i]
+			currUpper := 'A' <= c && c <= 'Z'
+			currDigit := '0' <= c && c <= '9'
+			if currUpper {
+				nextLower := i+1 < len(str) && ('a' <= str[i+1] && str[i+1] <= 'z')
+				if i > 0 && (prevLower || prevDigit || nextLower) {
+					b.WriteByte('-')
+				}
+				c += 'a' - 'A'
+			} else if currDigit {
+				if i > 0 && prevLower {
+					b.WriteByte('-')
+				}
+			}
+
+			b.WriteByte(c)
+			prevLower = 'a' <= c && c <= 'z'
+			prevDigit = currDigit
+		}
+
+		return b.String()
+	}
+
+	var b strings.Builder
+	// Heuristic: input length + ~50% headroom for dashes/UTF-8 growth.
+	b.Grow(len(str) + len(str)/2 + 1)
+
+	reader := strings.NewReader(str)
+	curr, _, _ := reader.ReadRune()
+	next, _, nextErr := reader.ReadRune()
+	hasNext := nextErr == nil
+	var prev rune
+	prevValid := false
+
+	for {
+		if shouldInsertDashRunes(prevValid, prev, curr, hasNext, next) {
 			b.WriteByte('-')
 		}
-		b.WriteRune(toLowerRune(r))
+		b.WriteRune(toLowerRune(curr))
+
+		if !hasNext {
+			break
+		}
+
+		prev, prevValid = curr, true
+		curr = next
+		next, _, nextErr = reader.ReadRune()
+		hasNext = nextErr == nil
 	}
 
 	return b.String()
 }
 
-func shouldInsertDash(runes []rune, idx int) bool {
-	if idx == 0 {
+func isASCII(s string) bool {
+	for i := 0; i < len(s); i++ {
+		if s[i] >= utf8.RuneSelf {
+			return false
+		}
+	}
+	return true
+}
+
+func shouldInsertDashRunes(prevValid bool, prev, curr rune, hasNext bool, next rune) bool {
+	if !prevValid {
 		return false
 	}
-
-	prev := runes[idx-1]
-	curr := runes[idx]
 
 	prevLower := isLower(prev)
 	prevDigit := isDigit(prev)
@@ -53,7 +104,7 @@ func shouldInsertDash(runes []rune, idx int) bool {
 	currDigit := isDigit(curr)
 
 	if currUpper {
-		nextLower := idx+1 < len(runes) && isLower(runes[idx+1])
+		nextLower := hasNext && isLower(next)
 		return prevLower || prevDigit || nextLower
 	}
 
@@ -91,10 +142,4 @@ func canonicalizeCommentText(text string) string {
 		return text
 	}
 	return pkgPathCanonicalizer.Replace(text)
-}
-
-// NewProperties is a helper method to instantiate a new properties ordered
-// map.
-func NewProperties() *orderedmap.OrderedMap[string, *Schema] {
-	return orderedmap.New[string, *Schema]()
 }

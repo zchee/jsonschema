@@ -8,9 +8,9 @@ package jsonschema
 
 import (
 	"bytes"
-	jsonv1 "encoding/json"
 	json "encoding/json/v2"
 	"fmt"
+	jsonv1 "github.com/goccy/go-json"
 	"iter"
 	"maps"
 	"net"
@@ -19,6 +19,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -46,6 +47,49 @@ type aliasSchemaImpl interface {
 // should be used for the contents.
 type propertyAliasSchemaImpl interface {
 	JSONSchemaProperty(prop string) any
+}
+
+type cachedField struct {
+	name       string
+	embed      bool
+	required   bool
+	nullable   bool
+	set        bool
+	schemaTags []string
+}
+
+type fieldCache struct {
+	mu      sync.RWMutex
+	entries map[reflect.Type][]cachedField
+}
+
+func (c *fieldCache) get(t reflect.Type, idx int) (cachedField, bool) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	fields, ok := c.entries[t]
+	if !ok || idx >= len(fields) {
+		return cachedField{}, false
+	}
+	cf := fields[idx]
+	return cf, cf.set
+}
+
+func (c *fieldCache) set(t reflect.Type, idx int, cf cachedField) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.entries == nil {
+		c.entries = make(map[reflect.Type][]cachedField)
+	}
+	fields, ok := c.entries[t]
+	if !ok {
+		fields = make([]cachedField, t.NumField())
+		c.entries[t] = fields
+	}
+	if idx < len(fields) {
+		cf.set = true
+		fields[idx] = cf
+	}
 }
 
 var (
@@ -200,6 +244,9 @@ type Reflector struct {
 	//
 	// See also: AddGoComments, LookupComment
 	CommentMap map[string]string
+
+	// fieldCache stores per-type field metadata to avoid re-parsing tags on every reflection.
+	fieldCache fieldCache
 }
 
 // Reflect reflects to Schema from a value.
@@ -498,7 +545,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, name string, tag refl
 
 	r.addDefinition(definitions, t, s)
 	s.Type = "object"
-	s.Properties = NewProperties()
+	s.Properties = NewPropertiesCap(t.NumField())
 	s.Description = r.lookupComment(t, "")
 	if r.AssignAnchor {
 		s.Anchor = t.Name()
@@ -517,6 +564,10 @@ func (r *Reflector) reflectStruct(definitions Definitions, name string, tag refl
 	if !ignored {
 		r.reflectStructFields(definitions, name, tag, s, t)
 	}
+
+	if s.Properties == nil {
+		s.Properties = NewProperties()
+	}
 }
 
 func (r *Reflector) reflectStructFields(definitions Definitions, pName string, tag reflect.StructTag, st *Schema, t reflect.Type) {
@@ -534,17 +585,15 @@ func (r *Reflector) reflectStructFields(definitions Definitions, pName string, t
 		getFieldDocString = o.GetFieldDocString
 	}
 
-	customPropertyMethod := func(string) any {
-		return nil
-	}
+	customPropertyMethod := func(string) any { return nil }
 	if t.Implements(customPropertyAliasSchema) {
 		v := reflect.New(t)
 		o := v.Interface().(propertyAliasSchemaImpl)
 		customPropertyMethod = o.JSONSchemaProperty
 	}
 
-	handleField := func(f reflect.StructField) {
-		name, shouldEmbed, required, nullable := r.reflectFieldName(f)
+	handleField := func(f reflect.StructField, meta cachedField) {
+		name, shouldEmbed, required, nullable := meta.name, meta.embed, meta.required, meta.nullable
 		// if anonymous and exported type should be processed recursively
 		// current type should inherit properties of anonymous one
 		if name == "" {
@@ -563,7 +612,7 @@ func (r *Reflector) reflectStructFields(definitions Definitions, pName string, t
 			property = r.refOrReflectTypeToSchema(definitions, name, f.Tag, f.Type)
 		}
 
-		property.structKeywordsFromTags(f, st, name)
+		property.structKeywordsFromTags(f, st, name, meta.schemaTags)
 		if property.Description == "" {
 			property.Description = r.lookupComment(t, f.Name)
 		}
@@ -595,12 +644,21 @@ func (r *Reflector) reflectStructFields(definitions Definitions, pName string, t
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		handleField(f)
+		meta, ok := r.fieldCache.get(t, i)
+		if !ok {
+			name, shouldEmbed, required, nullable := r.reflectFieldName(f)
+			schemaTags := splitOnUnescapedCommas(f.Tag.Get("jsonschema"))
+			meta = cachedField{name: name, embed: shouldEmbed, required: required, nullable: nullable, schemaTags: schemaTags}
+			r.fieldCache.set(t, i, meta)
+		}
+		handleField(f, meta)
 	}
 	if r.AdditionalFields != nil {
 		if af := r.AdditionalFields(t); af != nil {
 			for _, sf := range af {
-				handleField(sf)
+				name, shouldEmbed, required, nullable := r.reflectFieldName(sf)
+				schemaTags := splitOnUnescapedCommas(sf.Tag.Get("jsonschema"))
+				handleField(sf, cachedField{name: name, embed: shouldEmbed, required: required, nullable: nullable, schemaTags: schemaTags})
 			}
 		}
 	}
@@ -652,10 +710,12 @@ func (r *Reflector) lookupID(t reflect.Type) ID {
 	return EmptyID
 }
 
-func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, propertyName string) {
+func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, propertyName string, tags []string) {
 	t.Description = f.Tag.Get("jsonschema_description")
 
-	tags := splitOnUnescapedCommas(f.Tag.Get("jsonschema"))
+	if tags == nil {
+		tags = splitOnUnescapedCommas(f.Tag.Get("jsonschema"))
+	}
 	tags = t.genericKeywords(tags, parent, propertyName)
 
 	switch t.Type {
@@ -678,103 +738,94 @@ func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, p
 func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName string) []string { //nolint:gocyclo
 	unprocessed := make([]string, 0, len(tags))
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "title":
-				t.Title = val
-			case "description":
-				t.Description = val
-			case "type":
-				t.Type = val
-			case "anchor":
-				t.Anchor = val
-			case "oneof_required":
-				var typeFound *Schema
-				for i := range parent.OneOf {
-					if parent.OneOf[i].Title == nameValue[1] {
-						typeFound = parent.OneOf[i]
-					}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+
+		switch name {
+		case "title":
+			t.Title = val
+		case "description":
+			t.Description = val
+		case "type":
+			t.Type = val
+		case "anchor":
+			t.Anchor = val
+		case "oneof_required":
+			var typeFound *Schema
+			for _, opt := range parent.OneOf {
+				if opt.Title == val {
+					typeFound = opt
+					break
 				}
-				if typeFound == nil {
-					typeFound = &Schema{
-						Title:    nameValue[1],
-						Required: []string{},
-					}
-					parent.OneOf = append(parent.OneOf, typeFound)
-				}
-				typeFound.Required = append(typeFound.Required, propertyName)
-			case "anyof_required":
-				var typeFound *Schema
-				for i := range parent.AnyOf {
-					if parent.AnyOf[i].Title == nameValue[1] {
-						typeFound = parent.AnyOf[i]
-					}
-				}
-				if typeFound == nil {
-					typeFound = &Schema{
-						Title:    nameValue[1],
-						Required: []string{},
-					}
-					parent.AnyOf = append(parent.AnyOf, typeFound)
-				}
-				typeFound.Required = append(typeFound.Required, propertyName)
-			case "oneof_ref":
-				subSchema := t
-				if t.Items != nil {
-					subSchema = t.Items
-				}
-				if subSchema.OneOf == nil {
-					subSchema.OneOf = make([]*Schema, 0, 1)
-				}
-				subSchema.Ref = ""
-				refs := strings.Split(nameValue[1], ";")
-				for _, r := range refs {
-					subSchema.OneOf = append(subSchema.OneOf, &Schema{
-						Ref: r,
-					})
-				}
-			case "oneof_type":
-				if t.OneOf == nil {
-					t.OneOf = make([]*Schema, 0, 1)
-				}
-				t.Type = ""
-				types := strings.Split(nameValue[1], ";")
-				for _, ty := range types {
-					t.OneOf = append(t.OneOf, &Schema{
-						Type: ty,
-					})
-				}
-			case "anyof_ref":
-				subSchema := t
-				if t.Items != nil {
-					subSchema = t.Items
-				}
-				if subSchema.AnyOf == nil {
-					subSchema.AnyOf = make([]*Schema, 0, 1)
-				}
-				subSchema.Ref = ""
-				refs := strings.Split(nameValue[1], ";")
-				for _, r := range refs {
-					subSchema.AnyOf = append(subSchema.AnyOf, &Schema{
-						Ref: r,
-					})
-				}
-			case "anyof_type":
-				if t.AnyOf == nil {
-					t.AnyOf = make([]*Schema, 0, 1)
-				}
-				t.Type = ""
-				types := strings.Split(nameValue[1], ";")
-				for _, ty := range types {
-					t.AnyOf = append(t.AnyOf, &Schema{
-						Type: ty,
-					})
-				}
-			default:
-				unprocessed = append(unprocessed, tag)
 			}
+			if typeFound == nil {
+				typeFound = &Schema{
+					Title:    val,
+					Required: []string{},
+				}
+				parent.OneOf = append(parent.OneOf, typeFound)
+			}
+			typeFound.Required = append(typeFound.Required, propertyName)
+		case "anyof_required":
+			var typeFound *Schema
+			for _, opt := range parent.AnyOf {
+				if opt.Title == val {
+					typeFound = opt
+					break
+				}
+			}
+			if typeFound == nil {
+				typeFound = &Schema{
+					Title:    val,
+					Required: []string{},
+				}
+				parent.AnyOf = append(parent.AnyOf, typeFound)
+			}
+			typeFound.Required = append(typeFound.Required, propertyName)
+		case "oneof_ref":
+			subSchema := t
+			if t.Items != nil {
+				subSchema = t.Items
+			}
+			if subSchema.OneOf == nil {
+				subSchema.OneOf = make([]*Schema, 0, 1)
+			}
+			subSchema.Ref = ""
+			for _, r := range strings.Split(val, ";") {
+				subSchema.OneOf = append(subSchema.OneOf, &Schema{Ref: r})
+			}
+		case "oneof_type":
+			if t.OneOf == nil {
+				t.OneOf = make([]*Schema, 0, 1)
+			}
+			t.Type = ""
+			for _, ty := range strings.Split(val, ";") {
+				t.OneOf = append(t.OneOf, &Schema{Type: ty})
+			}
+		case "anyof_ref":
+			subSchema := t
+			if t.Items != nil {
+				subSchema = t.Items
+			}
+			if subSchema.AnyOf == nil {
+				subSchema.AnyOf = make([]*Schema, 0, 1)
+			}
+			subSchema.Ref = ""
+			for _, r := range strings.Split(val, ";") {
+				subSchema.AnyOf = append(subSchema.AnyOf, &Schema{Ref: r})
+			}
+		case "anyof_type":
+			if t.AnyOf == nil {
+				t.AnyOf = make([]*Schema, 0, 1)
+			}
+			t.Type = ""
+			for _, ty := range strings.Split(val, ";") {
+				t.AnyOf = append(t.AnyOf, &Schema{Type: ty})
+			}
+		default:
+			unprocessed = append(unprocessed, tag)
 		}
 	}
 	return unprocessed
@@ -783,11 +834,10 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 // read struct tags for boolean type keywords
 func (t *Schema) booleanKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) != 2 {
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
 			continue
 		}
-		name, val := nameValue[0], nameValue[1]
 		if name == "default" {
 			if val == "true" {
 				t.Default = true
@@ -801,31 +851,31 @@ func (t *Schema) booleanKeywords(tags []string) {
 // read struct tags for string type keywords
 func (t *Schema) stringKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "minLength":
-				t.MinLength = parseUint(val)
-			case "maxLength":
-				t.MaxLength = parseUint(val)
-			case "pattern":
-				t.Pattern = val
-			case "format":
-				t.Format = val
-			case "readOnly":
-				i, _ := strconv.ParseBool(val)
-				t.ReadOnly = i
-			case "writeOnly":
-				i, _ := strconv.ParseBool(val)
-				t.WriteOnly = i
-			case "default":
-				t.Default = val
-			case "example":
-				t.Examples = append(t.Examples, val)
-			case "enum":
-				t.Enum = append(t.Enum, val)
-			}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "minLength":
+			t.MinLength = parseUint(val)
+		case "maxLength":
+			t.MaxLength = parseUint(val)
+		case "pattern":
+			t.Pattern = val
+		case "format":
+			t.Format = val
+		case "readOnly":
+			i, _ := strconv.ParseBool(val)
+			t.ReadOnly = i
+		case "writeOnly":
+			i, _ := strconv.ParseBool(val)
+			t.WriteOnly = i
+		case "default":
+			t.Default = val
+		case "example":
+			t.Examples = append(t.Examples, val)
+		case "enum":
+			t.Enum = append(t.Enum, val)
 		}
 	}
 }
@@ -833,32 +883,32 @@ func (t *Schema) stringKeywords(tags []string) {
 // read struct tags for numerical type keywords
 func (t *Schema) numericalKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "multipleOf":
-				t.MultipleOf, _ = toJSONNumber(val)
-			case "minimum":
-				t.Minimum, _ = toJSONNumber(val)
-			case "maximum":
-				t.Maximum, _ = toJSONNumber(val)
-			case "exclusiveMaximum":
-				t.ExclusiveMaximum, _ = toJSONNumber(val)
-			case "exclusiveMinimum":
-				t.ExclusiveMinimum, _ = toJSONNumber(val)
-			case "default":
-				if num, ok := toJSONNumber(val); ok {
-					t.Default = num
-				}
-			case "example":
-				if num, ok := toJSONNumber(val); ok {
-					t.Examples = append(t.Examples, num)
-				}
-			case "enum":
-				if num, ok := toJSONNumber(val); ok {
-					t.Enum = append(t.Enum, num)
-				}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "multipleOf":
+			t.MultipleOf, _ = toJSONNumber(val)
+		case "minimum":
+			t.Minimum, _ = toJSONNumber(val)
+		case "maximum":
+			t.Maximum, _ = toJSONNumber(val)
+		case "exclusiveMaximum":
+			t.ExclusiveMaximum, _ = toJSONNumber(val)
+		case "exclusiveMinimum":
+			t.ExclusiveMinimum, _ = toJSONNumber(val)
+		case "default":
+			if num, ok := toJSONNumber(val); ok {
+				t.Default = num
+			}
+		case "example":
+			if num, ok := toJSONNumber(val); ok {
+				t.Examples = append(t.Examples, num)
+			}
+		case "enum":
+			if num, ok := toJSONNumber(val); ok {
+				t.Enum = append(t.Enum, num)
 			}
 		}
 	}
@@ -886,25 +936,25 @@ func (t *Schema) arrayKeywords(tags []string) {
 
 	unprocessed := make([]string, 0, len(tags))
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "minItems":
-				t.MinItems = parseUint(val)
-			case "maxItems":
-				t.MaxItems = parseUint(val)
-			case "uniqueItems":
-				t.UniqueItems = true
-			case "default":
-				defaultValues = append(defaultValues, val)
-			case "format":
-				t.Items.Format = val
-			case "pattern":
-				t.Items.Pattern = val
-			default:
-				unprocessed = append(unprocessed, tag) // left for further processing by underlying type
-			}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "minItems":
+			t.MinItems = parseUint(val)
+		case "maxItems":
+			t.MaxItems = parseUint(val)
+		case "uniqueItems":
+			t.UniqueItems = true
+		case "default":
+			defaultValues = append(defaultValues, val)
+		case "format":
+			t.Items.Format = val
+		case "pattern":
+			t.Items.Pattern = val
+		default:
+			unprocessed = append(unprocessed, tag) // left for further processing by underlying type
 		}
 	}
 	if len(defaultValues) > 0 {
@@ -931,18 +981,23 @@ func (t *Schema) arrayKeywords(tags []string) {
 }
 
 func (t *Schema) extraKeywords(tags []string) {
+	if len(tags) == 0 || (len(tags) == 1 && tags[0] == "") {
+		return
+	}
+
+	if t.Extras == nil {
+		t.Extras = make(map[string]any, len(tags))
+	}
+
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			t.setExtra(nameValue[0], nameValue[1])
+		key, val, ok := strings.Cut(tag, "=")
+		if ok {
+			t.setExtra(key, val)
 		}
 	}
 }
 
 func (t *Schema) setExtra(key, val string) {
-	if t.Extras == nil {
-		t.Extras = map[string]any{}
-	}
 	if existingVal, ok := t.Extras[key]; ok {
 		switch existingVal := existingVal.(type) {
 		case string:
@@ -1140,6 +1195,9 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 		// Don't bother returning empty schemas
 		return []byte("true"), nil
 	}
+	if t.Type != "" && len(t.TypeEnhanced) > 0 {
+		return nil, fmt.Errorf("'Type' and 'TypeEnhanced' cannot be set at the same time")
+	}
 
 	type SchemaAlt Schema
 
@@ -1157,28 +1215,49 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 		}(),
 	}
 
-	b, err := json.Marshal(s)
+	b, err := jsonv1.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
 
-	extras := maps.Clone(t.Extras)
-	if len(extras) == 0 {
+	if len(t.Extras) == 0 {
 		return b, nil
 	}
 
-	m, err := json.Marshal(extras)
-	if err != nil {
-		return nil, err
+	if len(b) == 2 { // '{}'
+		return jsonv1.Marshal(t.Extras)
 	}
 
-	if len(b) == 2 {
-		return m, nil
+	merged := make([]byte, 0, len(b)+len(t.Extras)*32)
+	merged = append(merged, b[:len(b)-1]...)
+	first := len(b) == 2
+
+	keys := slices.Collect(maps.Keys(t.Extras))
+	slices.Sort(keys)
+
+	for _, k := range keys {
+		if !first {
+			merged = append(merged, ',')
+		} else {
+			first = false
+		}
+
+		keyBytes, err := jsonv1.Marshal(k)
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, keyBytes...)
+		merged = append(merged, ':')
+
+		valBytes, err := jsonv1.Marshal(t.Extras[k])
+		if err != nil {
+			return nil, err
+		}
+		merged = append(merged, valBytes...)
 	}
 
-	b[len(b)-1] = ','
-
-	return append(b, m[1:]...), nil
+	merged = append(merged, '}')
+	return merged, nil
 }
 
 func (t *typeUnion) MarshalJSON() ([]byte, error) {
@@ -1233,6 +1312,15 @@ func (r *Reflector) typeName(t reflect.Type) string {
 // Split on commas that are not preceded by `\`.
 // This way, we prevent splitting regexes
 func splitOnUnescapedCommas(tagString string) []string {
+	if tagString == "" {
+		return []string{""}
+	}
+
+	// Fast path when there are no escaped commas.
+	if !strings.Contains(tagString, "\\,") {
+		return strings.Split(tagString, ",")
+	}
+
 	parts := make([]string, 0, strings.Count(tagString, ",")+1)
 	return slices.AppendSeq(parts, splitOnUnescapedCommasSeq(tagString))
 }
@@ -1250,34 +1338,40 @@ func splitOnUnescapedCommasSeq(tagString string) iter.Seq[string] {
 		emit := func(end int, useBuf bool) bool {
 			if useBuf {
 				buf = append(buf, tagString[start:end]...)
-				defer func() { buf = buf[:0] }()
-				return yield(string(buf))
+				if !yield(string(buf)) {
+					return false
+				}
+				buf = buf[:0]
+				return true
 			}
 
 			return yield(tagString[start:end])
 		}
 
-		for i := 0; i < len(tagString); i++ {
-			c := tagString[i]
-
-			if c == '\\' && i+1 < len(tagString) && tagString[i+1] == ',' {
+		i := 0
+		for i < len(tagString) {
+			next := strings.IndexByte(tagString[i:], ',')
+			bs := strings.Index(tagString[i:], `\,`)
+			if bs != -1 && (next == -1 || bs < next) {
+				j := i + bs
 				if buf == nil {
 					buf = make([]byte, 0, len(tagString)-start)
 				}
-				buf = append(buf, tagString[start:i]...)
+				buf = append(buf, tagString[start:j]...)
 				buf = append(buf, ',')
-				i++
-				start = i + 1
+				i = j + 2
+				start = i
 				continue
 			}
-
-			if c == ',' {
-				if !emit(i, buf != nil) {
-					return
-				}
-				start = i + 1
-				continue
+			if next == -1 {
+				break
 			}
+			j := i + next
+			if !emit(j, buf != nil) {
+				return
+			}
+			start = j + 1
+			i = start
 		}
 
 		_ = emit(len(tagString), buf != nil)

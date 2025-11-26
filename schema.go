@@ -1,9 +1,7 @@
 package jsonschema
 
 import (
-	jsonv1 "encoding/json"
-
-	orderedmap "github.com/wk8/go-ordered-map/v2"
+	jsonv1 "github.com/goccy/go-json"
 )
 
 // Version is the JSON Schema version.
@@ -35,10 +33,10 @@ type Schema struct {
 	Items       *Schema   `json:"items,omitzero,omitempty"`       // section 10.3.1.2  (replaces additionalItems)
 	Contains    *Schema   `json:"contains,omitzero,omitempty"`    // section 10.3.1.3
 	// RFC draft-bhutton-json-schema-00 section 10.3.2 (sub-schemas)
-	Properties           *orderedmap.OrderedMap[string, *Schema] `json:"properties,omitempty"`                    // section 10.3.2.1
-	PatternProperties    map[string]*Schema                      `json:"patternProperties,omitzero,omitempty"`    // section 10.3.2.2
-	AdditionalProperties *Schema                                 `json:"additionalProperties,omitzero,omitempty"` // section 10.3.2.3
-	PropertyNames        *Schema                                 `json:"propertyNames,omitzero,omitempty"`        // section 10.3.2.4
+	Properties           *Properties        `json:"properties,omitempty"`                    // section 10.3.2.1
+	PatternProperties    map[string]*Schema `json:"patternProperties,omitzero,omitempty"`    // section 10.3.2.2
+	AdditionalProperties *Schema            `json:"additionalProperties,omitzero,omitempty"` // section 10.3.2.3
+	PropertyNames        *Schema            `json:"propertyNames,omitzero,omitempty"`        // section 10.3.2.4
 
 	// Type is the instance data model type (RFC draft-bhutton-json-schema-validation-00, section 6).
 	// The keyword in JSON Schema is "type".
