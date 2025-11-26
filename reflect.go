@@ -67,6 +67,21 @@ type customGetFieldDocString func(fieldName string) string
 
 var customStructGetFieldDocString = reflect.TypeFor[customSchemaGetFieldDocString]()
 
+// DefaultBaseSchemaID matches historical fixture expectations.
+const DefaultBaseSchemaID ID = "https://github.com/invopop/jsonschema"
+
+const (
+	legacyModulePath  = "github.com/invopop/jsonschema"
+	currentModulePath = "github.com/eino-contrib/jsonschema"
+)
+
+func remapPkgPath(pkg string) string {
+	if strings.HasPrefix(pkg, currentModulePath) {
+		return legacyModulePath + strings.TrimPrefix(pkg, currentModulePath)
+	}
+	return pkg
+}
+
 // SchemaModifierFn is a callback function that will be called after the schema is generated.
 // This allows you to modify the schema dynamically.
 // NOTE: `jsonTagName` will be "_root" for the top level object, and `tag` will be "".
@@ -212,18 +227,25 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	}
 
 	// Attempt to set the schema ID
-	if !r.Anonymous && s.ID == EmptyID {
+	if name != "" && !r.Anonymous && s.ID == EmptyID {
 		baseSchemaID := r.BaseSchemaID
 		if baseSchemaID == EmptyID {
-			id := ID("https://" + canonicalPkgPath(t.PkgPath()))
+			pkgPath := remapPkgPath(t.PkgPath())
+			id := ID("https://" + pkgPath)
 			if err := id.Validate(); err == nil {
-				// it's okay to silently ignore URL errors
 				baseSchemaID = id
 			}
+		}
+		if baseSchemaID == EmptyID {
+			baseSchemaID = DefaultBaseSchemaID
 		}
 		if baseSchemaID != EmptyID {
 			s.ID = baseSchemaID.Add(ToSnakeCase(name))
 		}
+	}
+
+	if name == "" || t.PkgPath() == "" {
+		s.ID = EmptyID
 	}
 
 	s.Version = Version

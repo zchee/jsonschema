@@ -1,8 +1,7 @@
 package jsonschema_test
 
 import (
-	"encoding/json/jsontext"
-	"encoding/json/v2"
+	jsonv1 "encoding/json"
 	"fmt"
 	"time"
 
@@ -115,15 +114,5 @@ func ExampleReflect() {
 }
 
 func marshalIndent(v any) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-
-	val := jsontext.Value(b)
-	if err := val.Indent(jsontext.WithIndent("  ")); err != nil {
-		return nil, err
-	}
-
-	return []byte(val), nil
+	return jsonv1.MarshalIndent(v, "", "  ")
 }

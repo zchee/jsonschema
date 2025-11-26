@@ -35,7 +35,7 @@ type Schema struct {
 	Items       *Schema   `json:"items,omitzero,omitempty"`       // section 10.3.1.2  (replaces additionalItems)
 	Contains    *Schema   `json:"contains,omitzero,omitempty"`    // section 10.3.1.3
 	// RFC draft-bhutton-json-schema-00 section 10.3.2 (sub-schemas)
-	Properties           *orderedmap.OrderedMap[string, *Schema] `json:"properties,omitzero,omitempty"`           // section 10.3.2.1
+	Properties           *orderedmap.OrderedMap[string, *Schema] `json:"properties"`                              // section 10.3.2.1
 	PatternProperties    map[string]*Schema                      `json:"patternProperties,omitzero,omitempty"`    // section 10.3.2.2
 	AdditionalProperties *Schema                                 `json:"additionalProperties,omitzero,omitempty"` // section 10.3.2.3
 	PropertyNames        *Schema                                 `json:"propertyNames,omitzero,omitempty"`        // section 10.3.2.4

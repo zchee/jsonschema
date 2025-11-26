@@ -2,7 +2,6 @@ package jsonschema
 
 import (
 	jsonv1 "encoding/json"
-	jsontext "encoding/json/jsontext"
 	json "encoding/json/v2"
 	"flag"
 	"fmt"
@@ -519,17 +518,7 @@ func fixtureContains(t *testing.T, f, s string) {
 }
 
 func marshalIndent(v any) ([]byte, error) {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return nil, err
-	}
-
-	val := jsontext.Value(b)
-	if err := val.Indent(jsontext.WithIndent("  ")); err != nil {
-		return nil, err
-	}
-
-	return []byte(val), nil
+	return jsonv1.MarshalIndent(v, "", "  ")
 }
 
 func TestSplitOnUnescapedCommas(t *testing.T) {
