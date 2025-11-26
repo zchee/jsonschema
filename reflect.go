@@ -227,7 +227,7 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	}
 
 	// Attempt to set the schema ID
-	if name != "" && !r.Anonymous && s.ID == EmptyID {
+	if name != "" && t.PkgPath() != "" && t.Name() != "rtype" && !r.Anonymous && s.ID == EmptyID {
 		baseSchemaID := r.BaseSchemaID
 		if baseSchemaID == EmptyID {
 			pkgPath := remapPkgPath(t.PkgPath())
