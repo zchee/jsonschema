@@ -2,16 +2,15 @@ package jsonschema
 
 import (
 	"fmt"
+	"go/ast"
+	"go/doc"
+	"go/parser"
+	"go/token"
 	"io/fs"
 	gopath "path"
 	"path/filepath"
 	"reflect"
 	"strings"
-
-	"go/ast"
-	"go/doc"
-	"go/parser"
-	"go/token"
 )
 
 type commentOptions struct {
@@ -129,7 +128,7 @@ func (r *Reflector) extractGoComments(base, path string, commentMap map[string]s
 func (r *Reflector) lookupComment(t reflect.Type, name string) string {
 	if r.LookupComment != nil {
 		if comment := r.LookupComment(t, name); comment != "" {
-			return canonicalizeCommentText(comment)
+			return strings.ReplaceAll(comment, currentModulePath, legacyModulePath)
 		}
 	}
 
@@ -142,5 +141,16 @@ func (r *Reflector) lookupComment(t reflect.Type, name string) string {
 		n = n + "." + name
 	}
 
-	return canonicalizeCommentText(r.CommentMap[n])
+	if comment, ok := r.CommentMap[n]; ok {
+		return comment
+	}
+
+	legacy := remapPkgPath(n)
+	if legacy != n {
+		if comment, ok := r.CommentMap[legacy]; ok {
+			return comment
+		}
+	}
+
+	return ""
 }

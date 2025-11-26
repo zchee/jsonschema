@@ -1,7 +1,8 @@
 package jsonschema
 
 import (
-	"encoding/json"
+	jsonv1 "encoding/json"
+	json "encoding/json/v2"
 	"flag"
 	"fmt"
 	"net"
@@ -17,8 +18,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var updateFixtures = flag.Bool("update", false, "set to update fixtures")
-var compareFixtures = flag.Bool("compare", false, "output failed fixtures with .out.json")
+var (
+	updateFixtures  = flag.Bool("update", false, "set to update fixtures")
+	compareFixtures = flag.Bool("compare", false, "output failed fixtures with .out.json")
+)
 
 type GrandfatherType struct {
 	FamilyName string `json:"family_name" jsonschema:"required"`
@@ -75,8 +78,8 @@ type TestUser struct {
 	IgnoredCounter int  `json:"-"`
 
 	// Tests for RFC draft-wright-json-schema-validation-00, section 7.3
-	BirthDate time.Time `json:"birth_date,omitempty"`
-	Website   url.URL   `json:"website,omitempty"`
+	BirthDate time.Time `json:"birth_date,omitzero"`
+	Website   url.URL   `json:"website,omitzero"`
 	IPAddress net.IP    `json:"network_address,omitempty"`
 
 	// Tests for RFC draft-wright-json-schema-hyperschema-00, section 4
@@ -105,8 +108,8 @@ type TestUser struct {
 	Offsets    []float64 `json:"offsets,omitempty" jsonschema:"enum=1.570796,enum=3.141592,enum=6.283185"`
 
 	// Test for raw JSON
-	Anything any             `json:"anything,omitempty"`
-	Raw      json.RawMessage `json:"raw"`
+	Anything any               `json:"anything,omitempty"`
+	Raw      jsonv1.RawMessage `json:"raw"`
 }
 
 type CustomTime time.Time
@@ -349,18 +352,12 @@ func TestReflector(t *testing.T) {
 
 func TestReflectFromType(t *testing.T) {
 	r := new(Reflector)
-	tu := new(TestUser)
-	typ := reflect.TypeOf(tu)
+	typ := reflect.TypeFor[*TestUser]()
 
 	s := r.ReflectFromType(typ)
 	assert.EqualValues(t, "https://github.com/invopop/jsonschema/test-user", s.ID)
 
-	x := struct {
-		Test string
-	}{
-		Test: "foo",
-	}
-	typ = reflect.TypeOf(x)
+	typ = reflect.TypeFor[struct{ Test string }]()
 	s = r.Reflect(typ)
 	assert.Empty(t, s.ID)
 }
@@ -384,7 +381,7 @@ func TestSchemaGeneration(t *testing.T) {
 		{&RootAnyOf{}, &Reflector{RequiredFromJSONSchemaTags: true}, "fixtures/anyof.json"},
 		{&CustomTypeField{}, &Reflector{
 			Mapper: func(i reflect.Type) *Schema {
-				if i == reflect.TypeOf(CustomTime{}) {
+				if i == reflect.TypeFor[CustomTime]() {
 					return &Schema{
 						Type:   "string",
 						Format: "date-time",
@@ -397,9 +394,9 @@ func TestSchemaGeneration(t *testing.T) {
 		{LookupUser{}, &Reflector{
 			Lookup: func(i reflect.Type) ID {
 				switch i {
-				case reflect.TypeOf(LookupUser{}):
+				case reflect.TypeFor[LookupUser]():
 					return ID("https://example.com/schemas/lookup-user")
-				case reflect.TypeOf(LookupName{}):
+				case reflect.TypeFor[LookupName]():
 					return ID("https://example.com/schemas/lookup-name")
 				}
 				return EmptyID
@@ -411,9 +408,9 @@ func TestSchemaGeneration(t *testing.T) {
 			AssignAnchor:   true,
 			Lookup: func(i reflect.Type) ID {
 				switch i {
-				case reflect.TypeOf(LookupUser{}):
+				case reflect.TypeFor[LookupUser]():
 					return ID("https://example.com/schemas/lookup-user")
-				case reflect.TypeOf(LookupName{}):
+				case reflect.TypeFor[LookupName]():
 					return ID("https://example.com/schemas/lookup-name")
 				}
 				return EmptyID
@@ -431,7 +428,7 @@ func TestSchemaGeneration(t *testing.T) {
 				return []reflect.StructField{
 					{
 						Name:      "Addr",
-						Type:      reflect.TypeOf((*net.IP)(nil)).Elem(),
+						Type:      reflect.TypeFor[net.IP](),
 						Tag:       "json:\"ip_addr\"",
 						Anonymous: false,
 					},
@@ -496,15 +493,15 @@ func compareSchemaOutput(t *testing.T, f string, r *Reflector, obj any) {
 	require.NoError(t, err)
 
 	actualSchema := r.Reflect(obj)
-	actualJSON, _ := json.MarshalIndent(actualSchema, "", "  ") //nolint:errchkjson
+	actualJSON, _ := marshalIndent(actualSchema) //nolint:errchkjson
 
 	if *updateFixtures {
-		_ = os.WriteFile(f, actualJSON, 0600)
+		_ = os.WriteFile(f, actualJSON, 0o600)
 	}
 
 	if !assert.JSONEq(t, string(expectedJSON), string(actualJSON)) {
 		if *compareFixtures {
-			_ = os.WriteFile(strings.TrimSuffix(f, ".json")+".out.json", actualJSON, 0600)
+			_ = os.WriteFile(strings.TrimSuffix(f, ".json")+".out.json", actualJSON, 0o600)
 		}
 	}
 }
@@ -514,6 +511,10 @@ func fixtureContains(t *testing.T, f, s string) {
 	b, err := os.ReadFile(f)
 	require.NoError(t, err)
 	assert.Contains(t, string(b), s)
+}
+
+func marshalIndent(v any) ([]byte, error) {
+	return jsonv1.MarshalIndent(v, "", "  ")
 }
 
 func TestSplitOnUnescapedCommas(t *testing.T) {
@@ -725,19 +726,19 @@ func TestSchemaModifierFn(t *testing.T) {
 		if name == "_root" {
 			schema.Title = "TestRoot"
 		}
-		if name == "a" && t == reflect.TypeOf(TestInnerA{}) && strings.Contains(tag.Get("jsonschema"), "__TestInnerA") {
+		if name == "a" && t == reflect.TypeFor[TestInnerA]() && strings.Contains(tag.Get("jsonschema"), "__TestInnerA") {
 			schema.Title = "TestInnerA"
 		}
-		if name == "a" && t == reflect.TypeOf("") && strings.Contains(tag.Get("jsonschema"), "__TestStringA") {
+		if name == "a" && t == reflect.TypeFor[string]() && strings.Contains(tag.Get("jsonschema"), "__TestStringA") {
 			schema.Title = "TestStringA"
 		}
-		if name == "b" && t == reflect.TypeOf(TestInnerB{}) && strings.Contains(tag.Get("jsonschema"), "__TestInnerB") {
+		if name == "b" && t == reflect.TypeFor[TestInnerB]() && strings.Contains(tag.Get("jsonschema"), "__TestInnerB") {
 			schema.Title = "TestInnerB"
 		}
-		if name == "b" && t == reflect.TypeOf("") && strings.Contains(tag.Get("jsonschema"), "__TestStringB") {
+		if name == "b" && t == reflect.TypeFor[string]() && strings.Contains(tag.Get("jsonschema"), "__TestStringB") {
 			schema.Title = "TestStringB"
 		}
-		if name == "c" && t == reflect.TypeOf([]string{}) && strings.Contains(tag.Get("jsonschema"), "__TestArrayC") {
+		if name == "c" && t == reflect.TypeFor[[]string]() && strings.Contains(tag.Get("jsonschema"), "__TestArrayC") {
 			schema.Title = "TestArrayC"
 		}
 	}
@@ -752,9 +753,9 @@ func TestSchemaModifierFn(t *testing.T) {
 		typ    reflect.Type
 		scType string
 	}{
-		{"TestStruct", reflect.TypeOf(TestOuter{}), "object"},
-		{"TestArray", reflect.TypeOf([]TestOuter{}), "array"},
-		{"TestArrayOfArray", reflect.TypeOf([][]TestOuter{}), "array"},
+		{"TestStruct", reflect.TypeFor[TestOuter](), "object"},
+		{"TestArray", reflect.TypeFor[[]TestOuter](), "array"},
+		{"TestArrayOfArray", reflect.TypeFor[[][]TestOuter](), "array"},
 	}
 
 	for _, tt := range tests {
