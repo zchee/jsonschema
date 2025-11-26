@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/eino-contrib/jsonschema/examples"
+	"github.com/zchee/jsonschema/examples"
 )
 
 // Benchmarks target the hottest reflection helpers so we can measure parsing

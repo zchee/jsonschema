@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/eino-contrib/jsonschema"
+	"github.com/zchee/jsonschema"
 )
 
 type SampleUser struct {

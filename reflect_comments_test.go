@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/eino-contrib/jsonschema/examples"
+	"github.com/zchee/jsonschema/examples"
 	"github.com/stretchr/testify/require"
 )
 

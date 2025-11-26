@@ -116,7 +116,7 @@ const DefaultBaseSchemaID ID = "https://github.com/invopop/jsonschema"
 
 const (
 	legacyModulePath  = "github.com/invopop/jsonschema"
-	currentModulePath = "github.com/eino-contrib/jsonschema"
+	currentModulePath = "github.com/zchee/jsonschema"
 )
 
 func remapPkgPath(pkg string) string {

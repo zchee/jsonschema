@@ -11,8 +11,8 @@ var (
 	matchFirstCap        = regexp.MustCompile("(.)([A-Z][a-z]+)")
 	matchAllCap          = regexp.MustCompile("([a-z0-9])([A-Z])")
 	pkgPathCanonicalizer = strings.NewReplacer(
-		"github.com/eino-contrib/jsonschema_test", "github.com/invopop/jsonschema_test",
-		"github.com/eino-contrib/jsonschema", "github.com/invopop/jsonschema",
+		"github.com/zchee/jsonschema_test", "github.com/invopop/jsonschema_test",
+		"github.com/zchee/jsonschema", "github.com/invopop/jsonschema",
 	)
 )
 

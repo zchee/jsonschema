@@ -1,4 +1,4 @@
-module github.com/eino-contrib/jsonschema
+module github.com/zchee/jsonschema
 
 go 1.25
 
