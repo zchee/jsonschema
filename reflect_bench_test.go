@@ -26,16 +26,16 @@ func BenchmarkReflectUser(b *testing.B) {
 	reflector := &Reflector{}
 	user := &examples.User{}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = reflector.Reflect(user)
 	}
 }
 
 func BenchmarkSplitOnUnescapedCommas(b *testing.B) {
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		splitOnUnescapedCommas(benchTagString)
 	}
 }
@@ -43,16 +43,16 @@ func BenchmarkSplitOnUnescapedCommas(b *testing.B) {
 func BenchmarkReflectHeavyTags(b *testing.B) {
 	reflector := &Reflector{}
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		_ = reflector.Reflect(&heavyTagged{})
 	}
 }
 
 func BenchmarkToSnakeCase(b *testing.B) {
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for i := 0; b.Loop(); i++ {
 		ToSnakeCase(benchNames[i%len(benchNames)])
 	}
 }
@@ -62,8 +62,8 @@ func BenchmarkMarshalSchema(b *testing.B) {
 	schema := reflector.Reflect(&heavyTagged{})
 
 	b.ReportAllocs()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+
+	for b.Loop() {
 		if _, err := json.Marshal(schema); err != nil {
 			b.Fatal(err)
 		}

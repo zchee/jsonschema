@@ -120,8 +120,8 @@ const (
 )
 
 func remapPkgPath(pkg string) string {
-	if strings.HasPrefix(pkg, currentModulePath) {
-		return legacyModulePath + strings.TrimPrefix(pkg, currentModulePath)
+	if after, ok := strings.CutPrefix(pkg, currentModulePath); ok {
+		return legacyModulePath + after
 	}
 	return pkg
 }
@@ -793,7 +793,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				subSchema.OneOf = make([]*Schema, 0, 1)
 			}
 			subSchema.Ref = ""
-			for _, r := range strings.Split(val, ";") {
+			for r := range strings.SplitSeq(val, ";") {
 				subSchema.OneOf = append(subSchema.OneOf, &Schema{Ref: r})
 			}
 		case "oneof_type":
@@ -801,7 +801,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				t.OneOf = make([]*Schema, 0, 1)
 			}
 			t.Type = ""
-			for _, ty := range strings.Split(val, ";") {
+			for ty := range strings.SplitSeq(val, ";") {
 				t.OneOf = append(t.OneOf, &Schema{Type: ty})
 			}
 		case "anyof_ref":
@@ -813,7 +813,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				subSchema.AnyOf = make([]*Schema, 0, 1)
 			}
 			subSchema.Ref = ""
-			for _, r := range strings.Split(val, ";") {
+			for r := range strings.SplitSeq(val, ";") {
 				subSchema.AnyOf = append(subSchema.AnyOf, &Schema{Ref: r})
 			}
 		case "anyof_type":
@@ -821,7 +821,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				t.AnyOf = make([]*Schema, 0, 1)
 			}
 			t.Type = ""
-			for _, ty := range strings.Split(val, ";") {
+			for ty := range strings.SplitSeq(val, ";") {
 				t.AnyOf = append(t.AnyOf, &Schema{Type: ty})
 			}
 		default:

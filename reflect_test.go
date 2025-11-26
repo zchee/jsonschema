@@ -381,7 +381,7 @@ func TestSchemaGeneration(t *testing.T) {
 		{&RootAnyOf{}, &Reflector{RequiredFromJSONSchemaTags: true}, "fixtures/anyof.json"},
 		{&CustomTypeField{}, &Reflector{
 			Mapper: func(i reflect.Type) *Schema {
-				if i == reflect.TypeOf(CustomTime{}) {
+				if i == reflect.TypeFor[CustomTime]() {
 					return &Schema{
 						Type:   "string",
 						Format: "date-time",
