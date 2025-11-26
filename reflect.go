@@ -977,7 +977,7 @@ func requiredFromJSONTags(tags []string, val *bool) {
 		return
 	}
 
-	if slices.Contains(tags[1:], "omitempty") {
+	if slices.Contains(tags[1:], "omitempty") || slices.Contains(tags[1:], "omitzero") {
 		*val = false
 		return
 	}
