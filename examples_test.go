@@ -1,7 +1,8 @@
 package jsonschema_test
 
 import (
-	"encoding/json"
+	"encoding/json/jsontext"
+	"encoding/json/v2"
 	"fmt"
 	"time"
 
@@ -21,7 +22,7 @@ type SampleUser struct {
 
 func ExampleReflect() {
 	s := jsonschema.Reflect(&SampleUser{})
-	data, err := json.MarshalIndent(s, "", "  ")
+	data, err := marshalIndent(s)
 	if err != nil {
 		panic(err.Error())
 	}
@@ -111,4 +112,18 @@ func ExampleReflect() {
 	//     }
 	//   }
 	// }
+}
+
+func marshalIndent(v any) ([]byte, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	val := jsontext.Value(b)
+	if err := val.Indent(jsontext.WithIndent("  ")); err != nil {
+		return nil, err
+	}
+
+	return []byte(val), nil
 }

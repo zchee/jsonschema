@@ -1,7 +1,9 @@
 package jsonschema
 
 import (
-	"encoding/json"
+	jsonv1 "encoding/json"
+	jsontext "encoding/json/jsontext"
+	json "encoding/json/v2"
 	"flag"
 	"fmt"
 	"net"
@@ -105,8 +107,8 @@ type TestUser struct {
 	Offsets    []float64 `json:"offsets,omitempty" jsonschema:"enum=1.570796,enum=3.141592,enum=6.283185"`
 
 	// Test for raw JSON
-	Anything any             `json:"anything,omitempty"`
-	Raw      json.RawMessage `json:"raw"`
+	Anything any               `json:"anything,omitempty"`
+	Raw      jsonv1.RawMessage `json:"raw"`
 }
 
 type CustomTime time.Time
@@ -496,7 +498,7 @@ func compareSchemaOutput(t *testing.T, f string, r *Reflector, obj any) {
 	require.NoError(t, err)
 
 	actualSchema := r.Reflect(obj)
-	actualJSON, _ := json.MarshalIndent(actualSchema, "", "  ") //nolint:errchkjson
+	actualJSON, _ := marshalIndent(actualSchema) //nolint:errchkjson
 
 	if *updateFixtures {
 		_ = os.WriteFile(f, actualJSON, 0600)
@@ -514,6 +516,20 @@ func fixtureContains(t *testing.T, f, s string) {
 	b, err := os.ReadFile(f)
 	require.NoError(t, err)
 	assert.Contains(t, string(b), s)
+}
+
+func marshalIndent(v any) ([]byte, error) {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return nil, err
+	}
+
+	val := jsontext.Value(b)
+	if err := val.Indent(jsontext.WithIndent("  ")); err != nil {
+		return nil, err
+	}
+
+	return []byte(val), nil
 }
 
 func TestSplitOnUnescapedCommas(t *testing.T) {

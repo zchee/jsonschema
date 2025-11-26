@@ -8,7 +8,8 @@ package jsonschema
 
 import (
 	"bytes"
-	"encoding/json"
+	jsonv1 "encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"iter"
 	"maps"
@@ -245,7 +246,7 @@ var (
 var byteSliceType = reflect.TypeFor[[]byte]()
 
 // Except for json.RawMessage
-var rawMessageType = reflect.TypeFor[json.RawMessage]()
+var rawMessageType = reflect.TypeFor[jsonv1.RawMessage]()
 
 // Go code generated from protobuf enum types should fulfil this interface.
 type protoEnum interface {
@@ -995,15 +996,15 @@ func inlinedByJSONTags(tags []string) bool {
 
 // toJSONNumber converts string to *json.Number.
 // It'll aso return whether the number is valid.
-func toJSONNumber(s string) (json.Number, bool) {
-	num := json.Number(s)
+func toJSONNumber(s string) (jsonv1.Number, bool) {
+	num := jsonv1.Number(s)
 	if _, err := num.Int64(); err == nil {
 		return num, true
 	}
 	if _, err := num.Float64(); err == nil {
 		return num, true
 	}
-	return json.Number(""), false
+	return jsonv1.Number(""), false
 }
 
 func parseUint(num string) *uint64 {
