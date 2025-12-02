@@ -487,6 +487,10 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		return
 	}
 
+	if st.Required == nil {
+		st.Required = make([]string, 0, t.NumField())
+	}
+
 	fieldTagsCache := r.fieldTagsForType(t)
 
 	var getFieldDocString customGetFieldDocString
