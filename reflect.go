@@ -502,7 +502,8 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 	}
 
 	handleField := func(f reflect.StructField) {
-		name, shouldEmbed, required, nullable := r.reflectFieldName(f)
+		tags := r.parseFieldTags(f)
+		name, shouldEmbed, required, nullable := r.reflectFieldName(f, tags)
 		// if anonymous and exported type should be processed recursively
 		// current type should inherit properties of anonymous one
 		if name == "" {
@@ -521,7 +522,7 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 			property = r.refOrReflectTypeToSchema(definitions, f.Type)
 		}
 
-		property.structKeywordsFromTags(f, st, name)
+		property.structKeywordsFromTags(f, st, name, tags)
 		if property.Description == "" {
 			property.Description = r.lookupComment(t, f.Name)
 		}
@@ -556,6 +557,20 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 				handleField(sf)
 			}
 		}
+	}
+}
+
+type fieldTags struct {
+	jsonTags        []string
+	jsonschemaTags  []string
+	jsonschemaExtra []string
+}
+
+func (r *Reflector) parseFieldTags(f reflect.StructField) fieldTags {
+	return fieldTags{
+		jsonTags:        strings.Split(f.Tag.Get(r.fieldNameTag()), ","),
+		jsonschemaTags:  splitOnUnescapedCommas(f.Tag.Get("jsonschema")),
+		jsonschemaExtra: strings.Split(f.Tag.Get("jsonschema_extras"), ","),
 	}
 }
 
@@ -605,26 +620,25 @@ func (r *Reflector) lookupID(t reflect.Type) ID {
 	return EmptyID
 }
 
-func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, propertyName string) {
+func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, propertyName string, tags fieldTags) {
 	t.Description = f.Tag.Get("jsonschema_description")
 
-	tags := splitOnUnescapedCommas(f.Tag.Get("jsonschema"))
-	tags = t.genericKeywords(tags, parent, propertyName)
+	schemaTags := tags.jsonschemaTags
+	schemaTags = t.genericKeywords(schemaTags, parent, propertyName)
 
 	switch t.Type {
 	case "string":
-		t.stringKeywords(tags)
+		t.stringKeywords(schemaTags)
 	case "number":
-		t.numericalKeywords(tags)
+		t.numericalKeywords(schemaTags)
 	case "integer":
-		t.numericalKeywords(tags)
+		t.numericalKeywords(schemaTags)
 	case "array":
-		t.arrayKeywords(tags)
+		t.arrayKeywords(schemaTags)
 	case "boolean":
-		t.booleanKeywords(tags)
+		t.booleanKeywords(schemaTags)
 	}
-	extras := strings.Split(f.Tag.Get("jsonschema_extras"), ",")
-	t.extraKeywords(extras)
+	t.extraKeywords(tags.jsonschemaExtra)
 }
 
 // read struct tags for generic keywords
@@ -1007,15 +1021,14 @@ func (r *Reflector) fieldNameTag() string {
 	return "json"
 }
 
-func (r *Reflector) reflectFieldName(f reflect.StructField) (string, bool, bool, bool) {
-	jsonTagString := f.Tag.Get(r.fieldNameTag())
-	jsonTags := strings.Split(jsonTagString, ",")
+func (r *Reflector) reflectFieldName(f reflect.StructField, tags fieldTags) (string, bool, bool, bool) {
+	jsonTags := tags.jsonTags
 
 	if ignoredByJSONTags(jsonTags) {
 		return "", false, false, false
 	}
 
-	schemaTags := strings.Split(f.Tag.Get("jsonschema"), ",")
+	schemaTags := tags.jsonschemaTags
 	if ignoredByJSONSchemaTags(schemaTags) {
 		return "", false, false, false
 	}
