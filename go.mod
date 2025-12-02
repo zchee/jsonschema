@@ -1,4 +1,4 @@
-module github.com/eino-contrib/jsonschema
+module github.com/invopop/jsonschema
 
 go 1.25
 

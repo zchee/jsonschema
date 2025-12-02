@@ -1,19 +1,9 @@
 package jsonschema
 
 import (
-	"regexp"
 	"strings"
 	"unicode"
 	"unicode/utf8"
-)
-
-var (
-	matchFirstCap        = regexp.MustCompile("(.)([A-Z][a-z]+)")
-	matchAllCap          = regexp.MustCompile("([a-z0-9])([A-Z])")
-	pkgPathCanonicalizer = strings.NewReplacer(
-		"github.com/eino-contrib/jsonschema_test", "github.com/invopop/jsonschema_test",
-		"github.com/eino-contrib/jsonschema", "github.com/invopop/jsonschema",
-	)
 )
 
 // ToSnakeCase converts the provided string into snake case using dashes.
@@ -130,16 +120,4 @@ func toLowerRune(r rune) rune {
 	}
 
 	return unicode.ToLower(r)
-}
-
-// canonicalPkgPath normalizes known module path aliases to their canonical form.
-func canonicalPkgPath(path string) string {
-	return pkgPathCanonicalizer.Replace(path)
-}
-
-func canonicalizeCommentText(text string) string {
-	if text == "" {
-		return text
-	}
-	return pkgPathCanonicalizer.Replace(text)
 }

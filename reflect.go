@@ -10,7 +10,6 @@ import (
 	"bytes"
 	json "encoding/json/v2"
 	"fmt"
-	jsonv1 "github.com/goccy/go-json"
 	"iter"
 	"maps"
 	"net"
@@ -21,6 +20,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	jsonv1 "github.com/goccy/go-json"
 )
 
 // customSchemaImpl is used to detect if the type provides it's own
@@ -113,18 +114,6 @@ var customStructGetFieldDocString = reflect.TypeFor[customSchemaGetFieldDocStrin
 
 // DefaultBaseSchemaID matches historical fixture expectations.
 const DefaultBaseSchemaID ID = "https://github.com/invopop/jsonschema"
-
-const (
-	legacyModulePath  = "github.com/invopop/jsonschema"
-	currentModulePath = "github.com/eino-contrib/jsonschema"
-)
-
-func remapPkgPath(pkg string) string {
-	if after, ok := strings.CutPrefix(pkg, currentModulePath); ok {
-		return legacyModulePath + after
-	}
-	return pkg
-}
 
 // SchemaModifierFn is a callback function that will be called after the schema is generated.
 // This allows you to modify the schema dynamically.
@@ -277,7 +266,7 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	if name != "" && t.PkgPath() != "" && t.Name() != "rtype" && !r.Anonymous && s.ID == EmptyID {
 		baseSchemaID := r.BaseSchemaID
 		if baseSchemaID == EmptyID {
-			pkgPath := remapPkgPath(t.PkgPath())
+			pkgPath := t.PkgPath()
 			id := ID("https://" + pkgPath)
 			if err := id.Validate(); err == nil {
 				baseSchemaID = id
@@ -1379,5 +1368,5 @@ func splitOnUnescapedCommasSeq(tagString string) iter.Seq[string] {
 }
 
 func fullyQualifiedTypeName(t reflect.Type) string {
-	return canonicalPkgPath(t.PkgPath()) + "." + t.Name()
+	return t.PkgPath() + "." + t.Name()
 }

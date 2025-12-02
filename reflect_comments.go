@@ -69,7 +69,7 @@ func (r *Reflector) extractGoComments(base, path string, commentMap map[string]s
 			}
 			for _, v := range d {
 				// paths may have multiple packages, like for tests
-				pkgPath := canonicalPkgPath(gopath.Join(base, path))
+				pkgPath := gopath.Join(base, path)
 				dict[pkgPath] = append(dict[pkgPath], v)
 			}
 		}
@@ -128,7 +128,7 @@ func (r *Reflector) extractGoComments(base, path string, commentMap map[string]s
 func (r *Reflector) lookupComment(t reflect.Type, name string) string {
 	if r.LookupComment != nil {
 		if comment := r.LookupComment(t, name); comment != "" {
-			return strings.ReplaceAll(comment, currentModulePath, legacyModulePath)
+			return comment
 		}
 	}
 
@@ -145,7 +145,7 @@ func (r *Reflector) lookupComment(t reflect.Type, name string) string {
 		return comment
 	}
 
-	legacy := remapPkgPath(n)
+	legacy := n
 	if legacy != n {
 		if comment, ok := r.CommentMap[legacy]; ok {
 			return comment
