@@ -5,7 +5,7 @@ import "testing"
 func BenchmarkReflectTestUser(b *testing.B) {
 	b.ReportAllocs()
 	r := &Reflector{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = r.Reflect(TestUser{})
 	}
 }
@@ -13,7 +13,7 @@ func BenchmarkReflectTestUser(b *testing.B) {
 func BenchmarkReflectEmbedded(b *testing.B) {
 	b.ReportAllocs()
 	r := &Reflector{}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = r.Reflect(Outer{})
 	}
 }
@@ -21,7 +21,7 @@ func BenchmarkReflectEmbedded(b *testing.B) {
 func BenchmarkReflectDoNotReference(b *testing.B) {
 	b.ReportAllocs()
 	r := &Reflector{DoNotReference: true}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = r.Reflect(Outer{})
 	}
 }
@@ -29,7 +29,7 @@ func BenchmarkReflectDoNotReference(b *testing.B) {
 func BenchmarkReflectExpandedStruct(b *testing.B) {
 	b.ReportAllocs()
 	r := &Reflector{ExpandedStruct: true}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = r.Reflect(Outer{})
 	}
 }
@@ -47,7 +47,7 @@ func BenchmarkReflectWithComments(b *testing.B) {
 			"github.com/invopop/jsonschema.TextNamed.Field": "unused",
 		},
 	}
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = r.Reflect(Outer{})
 	}
 }
