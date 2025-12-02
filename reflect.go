@@ -21,7 +21,8 @@ import (
 	"sync"
 	"time"
 
-	jsonv1 "github.com/goccy/go-json"
+	gojson "github.com/goccy/go-json"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 // customSchemaImpl is used to detect if the type provides it's own
@@ -304,7 +305,7 @@ var (
 var byteSliceType = reflect.TypeFor[[]byte]()
 
 // Except for json.RawMessage
-var rawMessageType = reflect.TypeFor[jsonv1.RawMessage]()
+var rawMessageType = reflect.TypeFor[gojson.RawMessage]()
 
 // Go code generated from protobuf enum types should fulfil this interface.
 type protoEnum interface {
@@ -534,7 +535,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, name string, tag refl
 
 	r.addDefinition(definitions, t, s)
 	s.Type = "object"
-	s.Properties = NewPropertiesCap(t.NumField())
+	s.Properties = orderedmap.New[string, *Schema]()
 	s.Description = r.lookupComment(t, "")
 	if r.AssignAnchor {
 		s.Anchor = t.Name()
@@ -555,7 +556,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, name string, tag refl
 	}
 
 	if s.Properties == nil {
-		s.Properties = NewProperties()
+		s.Properties = orderedmap.New[string, *Schema]()
 	}
 }
 
@@ -1062,15 +1063,15 @@ func inlinedByJSONTags(tags []string) bool {
 
 // toJSONNumber converts string to *json.Number.
 // It'll aso return whether the number is valid.
-func toJSONNumber(s string) (jsonv1.Number, bool) {
-	num := jsonv1.Number(s)
+func toJSONNumber(s string) (gojson.Number, bool) {
+	num := gojson.Number(s)
 	if _, err := num.Int64(); err == nil {
 		return num, true
 	}
 	if _, err := num.Float64(); err == nil {
 		return num, true
 	}
-	return jsonv1.Number(""), false
+	return gojson.Number(""), false
 }
 
 func parseUint(num string) *uint64 {
@@ -1204,7 +1205,7 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 		}(),
 	}
 
-	b, err := jsonv1.Marshal(s)
+	b, err := gojson.Marshal(s)
 	if err != nil {
 		return nil, err
 	}
@@ -1214,7 +1215,7 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 	}
 
 	if len(b) == 2 { // '{}'
-		return jsonv1.Marshal(t.Extras)
+		return gojson.Marshal(t.Extras)
 	}
 
 	merged := make([]byte, 0, len(b)+len(t.Extras)*32)
@@ -1231,14 +1232,14 @@ func (t *Schema) MarshalJSON() ([]byte, error) {
 			first = false
 		}
 
-		keyBytes, err := jsonv1.Marshal(k)
+		keyBytes, err := gojson.Marshal(k)
 		if err != nil {
 			return nil, err
 		}
 		merged = append(merged, keyBytes...)
 		merged = append(merged, ':')
 
-		valBytes, err := jsonv1.Marshal(t.Extras[k])
+		valBytes, err := gojson.Marshal(t.Extras[k])
 		if err != nil {
 			return nil, err
 		}

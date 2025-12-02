@@ -16,6 +16,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	orderedmap "github.com/wk8/go-ordered-map/v2"
 )
 
 var (
@@ -272,7 +273,7 @@ func (CustomSliceType) JSONSchema() *Schema {
 type CustomMapType map[string]string
 
 func (CustomMapType) JSONSchema() *Schema {
-	properties := NewProperties()
+	properties := orderedmap.New[string, *Schema]()
 	properties.Set("key", &Schema{
 		Type: "string",
 	})
