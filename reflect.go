@@ -672,105 +672,93 @@ func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, p
 
 // read struct tags for generic keywords
 func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName string) []string { //nolint:gocyclo
-	unprocessed := make([]string, 0, len(tags))
+	var unprocessed []string
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "title":
-				t.Title = val
-			case "description":
-				t.Description = val
-			case "type":
-				t.Type = val
-			case "anchor":
-				t.Anchor = val
-			case "oneof_required":
-				var typeFound *Schema
-				for i := range parent.OneOf {
-					if parent.OneOf[i].Title == nameValue[1] {
-						typeFound = parent.OneOf[i]
-					}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "title":
+			t.Title = val
+		case "description":
+			t.Description = val
+		case "type":
+			t.Type = val
+		case "anchor":
+			t.Anchor = val
+		case "oneof_required":
+			var typeFound *Schema
+			for i := range parent.OneOf {
+				if parent.OneOf[i].Title == val {
+					typeFound = parent.OneOf[i]
 				}
-				if typeFound == nil {
-					typeFound = &Schema{
-						Title:    nameValue[1],
-						Required: []string{},
-					}
-					parent.OneOf = append(parent.OneOf, typeFound)
-				}
-				typeFound.Required = append(typeFound.Required, propertyName)
-			case "anyof_required":
-				var typeFound *Schema
-				for i := range parent.AnyOf {
-					if parent.AnyOf[i].Title == nameValue[1] {
-						typeFound = parent.AnyOf[i]
-					}
-				}
-				if typeFound == nil {
-					typeFound = &Schema{
-						Title:    nameValue[1],
-						Required: []string{},
-					}
-					parent.AnyOf = append(parent.AnyOf, typeFound)
-				}
-				typeFound.Required = append(typeFound.Required, propertyName)
-			case "oneof_ref":
-				subSchema := t
-				if t.Items != nil {
-					subSchema = t.Items
-				}
-				if subSchema.OneOf == nil {
-					subSchema.OneOf = make([]*Schema, 0, 1)
-				}
-				subSchema.Ref = ""
-				refs := strings.Split(nameValue[1], ";")
-				for _, r := range refs {
-					subSchema.OneOf = append(subSchema.OneOf, &Schema{
-						Ref: r,
-					})
-				}
-			case "oneof_type":
-				if t.OneOf == nil {
-					t.OneOf = make([]*Schema, 0, 1)
-				}
-				t.Type = ""
-				types := strings.Split(nameValue[1], ";")
-				for _, ty := range types {
-					t.OneOf = append(t.OneOf, &Schema{
-						Type: ty,
-					})
-				}
-			case "anyof_ref":
-				subSchema := t
-				if t.Items != nil {
-					subSchema = t.Items
-				}
-				if subSchema.AnyOf == nil {
-					subSchema.AnyOf = make([]*Schema, 0, 1)
-				}
-				subSchema.Ref = ""
-				refs := strings.Split(nameValue[1], ";")
-				for _, r := range refs {
-					subSchema.AnyOf = append(subSchema.AnyOf, &Schema{
-						Ref: r,
-					})
-				}
-			case "anyof_type":
-				if t.AnyOf == nil {
-					t.AnyOf = make([]*Schema, 0, 1)
-				}
-				t.Type = ""
-				types := strings.Split(nameValue[1], ";")
-				for _, ty := range types {
-					t.AnyOf = append(t.AnyOf, &Schema{
-						Type: ty,
-					})
-				}
-			default:
-				unprocessed = append(unprocessed, tag)
 			}
+			if typeFound == nil {
+				typeFound = &Schema{
+					Title:    val,
+					Required: []string{},
+				}
+				parent.OneOf = append(parent.OneOf, typeFound)
+			}
+			typeFound.Required = append(typeFound.Required, propertyName)
+		case "anyof_required":
+			var typeFound *Schema
+			for i := range parent.AnyOf {
+				if parent.AnyOf[i].Title == val {
+					typeFound = parent.AnyOf[i]
+				}
+			}
+			if typeFound == nil {
+				typeFound = &Schema{
+					Title:    val,
+					Required: []string{},
+				}
+				parent.AnyOf = append(parent.AnyOf, typeFound)
+			}
+			typeFound.Required = append(typeFound.Required, propertyName)
+		case "oneof_ref":
+			subSchema := t
+			if t.Items != nil {
+				subSchema = t.Items
+			}
+			if subSchema.OneOf == nil {
+				subSchema.OneOf = make([]*Schema, 0, 1)
+			}
+			subSchema.Ref = ""
+			for _, r := range strings.Split(val, ";") {
+				subSchema.OneOf = append(subSchema.OneOf, &Schema{Ref: r})
+			}
+		case "oneof_type":
+			if t.OneOf == nil {
+				t.OneOf = make([]*Schema, 0, 1)
+			}
+			t.Type = ""
+			for _, ty := range strings.Split(val, ";") {
+				t.OneOf = append(t.OneOf, &Schema{Type: ty})
+			}
+		case "anyof_ref":
+			subSchema := t
+			if t.Items != nil {
+				subSchema = t.Items
+			}
+			if subSchema.AnyOf == nil {
+				subSchema.AnyOf = make([]*Schema, 0, 1)
+			}
+			subSchema.Ref = ""
+			for _, r := range strings.Split(val, ";") {
+				subSchema.AnyOf = append(subSchema.AnyOf, &Schema{Ref: r})
+			}
+		case "anyof_type":
+			if t.AnyOf == nil {
+				t.AnyOf = make([]*Schema, 0, 1)
+			}
+			t.Type = ""
+			for _, ty := range strings.Split(val, ";") {
+				t.AnyOf = append(t.AnyOf, &Schema{Type: ty})
+			}
+		default:
+			unprocessed = append(unprocessed, tag)
 		}
 	}
 	return unprocessed
@@ -779,11 +767,10 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 // read struct tags for boolean type keywords
 func (t *Schema) booleanKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) != 2 {
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
 			continue
 		}
-		name, val := nameValue[0], nameValue[1]
 		if name == "default" {
 			if val == "true" {
 				t.Default = true
@@ -797,31 +784,31 @@ func (t *Schema) booleanKeywords(tags []string) {
 // read struct tags for string type keywords
 func (t *Schema) stringKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "minLength":
-				t.MinLength = parseUint(val)
-			case "maxLength":
-				t.MaxLength = parseUint(val)
-			case "pattern":
-				t.Pattern = val
-			case "format":
-				t.Format = val
-			case "readOnly":
-				i, _ := strconv.ParseBool(val)
-				t.ReadOnly = i
-			case "writeOnly":
-				i, _ := strconv.ParseBool(val)
-				t.WriteOnly = i
-			case "default":
-				t.Default = val
-			case "example":
-				t.Examples = append(t.Examples, val)
-			case "enum":
-				t.Enum = append(t.Enum, val)
-			}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "minLength":
+			t.MinLength = parseUint(val)
+		case "maxLength":
+			t.MaxLength = parseUint(val)
+		case "pattern":
+			t.Pattern = val
+		case "format":
+			t.Format = val
+		case "readOnly":
+			i, _ := strconv.ParseBool(val)
+			t.ReadOnly = i
+		case "writeOnly":
+			i, _ := strconv.ParseBool(val)
+			t.WriteOnly = i
+		case "default":
+			t.Default = val
+		case "example":
+			t.Examples = append(t.Examples, val)
+		case "enum":
+			t.Enum = append(t.Enum, val)
 		}
 	}
 }
@@ -829,32 +816,32 @@ func (t *Schema) stringKeywords(tags []string) {
 // read struct tags for numerical type keywords
 func (t *Schema) numericalKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "multipleOf":
-				t.MultipleOf, _ = toJSONNumber(val)
-			case "minimum":
-				t.Minimum, _ = toJSONNumber(val)
-			case "maximum":
-				t.Maximum, _ = toJSONNumber(val)
-			case "exclusiveMaximum":
-				t.ExclusiveMaximum, _ = toJSONNumber(val)
-			case "exclusiveMinimum":
-				t.ExclusiveMinimum, _ = toJSONNumber(val)
-			case "default":
-				if num, ok := toJSONNumber(val); ok {
-					t.Default = num
-				}
-			case "example":
-				if num, ok := toJSONNumber(val); ok {
-					t.Examples = append(t.Examples, num)
-				}
-			case "enum":
-				if num, ok := toJSONNumber(val); ok {
-					t.Enum = append(t.Enum, num)
-				}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "multipleOf":
+			t.MultipleOf, _ = toJSONNumber(val)
+		case "minimum":
+			t.Minimum, _ = toJSONNumber(val)
+		case "maximum":
+			t.Maximum, _ = toJSONNumber(val)
+		case "exclusiveMaximum":
+			t.ExclusiveMaximum, _ = toJSONNumber(val)
+		case "exclusiveMinimum":
+			t.ExclusiveMinimum, _ = toJSONNumber(val)
+		case "default":
+			if num, ok := toJSONNumber(val); ok {
+				t.Default = num
+			}
+		case "example":
+			if num, ok := toJSONNumber(val); ok {
+				t.Examples = append(t.Examples, num)
+			}
+		case "enum":
+			if num, ok := toJSONNumber(val); ok {
+				t.Enum = append(t.Enum, num)
 			}
 		}
 	}
@@ -880,27 +867,27 @@ func (t *Schema) numericalKeywords(tags []string) {
 func (t *Schema) arrayKeywords(tags []string) {
 	var defaultValues []any
 
-	unprocessed := make([]string, 0, len(tags))
+	var unprocessed []string
 	for _, tag := range tags {
-		nameValue := strings.Split(tag, "=")
-		if len(nameValue) == 2 {
-			name, val := nameValue[0], nameValue[1]
-			switch name {
-			case "minItems":
-				t.MinItems = parseUint(val)
-			case "maxItems":
-				t.MaxItems = parseUint(val)
-			case "uniqueItems":
-				t.UniqueItems = true
-			case "default":
-				defaultValues = append(defaultValues, val)
-			case "format":
-				t.Items.Format = val
-			case "pattern":
-				t.Items.Pattern = val
-			default:
-				unprocessed = append(unprocessed, tag) // left for further processing by underlying type
-			}
+		name, val, ok := strings.Cut(tag, "=")
+		if !ok {
+			continue
+		}
+		switch name {
+		case "minItems":
+			t.MinItems = parseUint(val)
+		case "maxItems":
+			t.MaxItems = parseUint(val)
+		case "uniqueItems":
+			t.UniqueItems = true
+		case "default":
+			defaultValues = append(defaultValues, val)
+		case "format":
+			t.Items.Format = val
+		case "pattern":
+			t.Items.Pattern = val
+		default:
+			unprocessed = append(unprocessed, tag) // left for further processing by underlying type
 		}
 	}
 	if len(defaultValues) > 0 {
@@ -928,9 +915,8 @@ func (t *Schema) arrayKeywords(tags []string) {
 
 func (t *Schema) extraKeywords(tags []string) {
 	for _, tag := range tags {
-		nameValue := strings.SplitN(tag, "=", 2)
-		if len(nameValue) == 2 {
-			t.setExtra(nameValue[0], nameValue[1])
+		if key, val, ok := strings.Cut(tag, "="); ok {
+			t.setExtra(key, val)
 		}
 	}
 }
