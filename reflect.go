@@ -15,6 +15,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/puzpuzpuz/xsync/v4"
 )
 
 // customSchemaImpl is used to detect if the type provides it's own
@@ -485,6 +487,8 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		return
 	}
 
+	fieldTagsCache := r.fieldTagsForType(t)
+
 	var getFieldDocString customGetFieldDocString
 	if t.Implements(customStructGetFieldDocString) {
 		v := reflect.New(t)
@@ -501,8 +505,7 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		customPropertyMethod = o.JSONSchemaProperty
 	}
 
-	handleField := func(f reflect.StructField) {
-		tags := r.parseFieldTags(f)
+	handleField := func(f reflect.StructField, tags fieldTags) {
 		name, shouldEmbed, required, nullable := r.reflectFieldName(f, tags)
 		// if anonymous and exported type should be processed recursively
 		// current type should inherit properties of anonymous one
@@ -549,12 +552,12 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 
 	for i := 0; i < t.NumField(); i++ {
 		f := t.Field(i)
-		handleField(f)
+		handleField(f, fieldTagsCache[i])
 	}
 	if r.AdditionalFields != nil {
 		if af := r.AdditionalFields(t); af != nil {
 			for _, sf := range af {
-				handleField(sf)
+				handleField(sf, r.parseFieldTagsForField(sf))
 			}
 		}
 	}
@@ -566,7 +569,33 @@ type fieldTags struct {
 	jsonschemaExtra []string
 }
 
-func (r *Reflector) parseFieldTags(f reflect.StructField) fieldTags {
+type fieldTagsKey struct {
+	t       reflect.Type
+	tagName string
+}
+
+var cachedFieldTags = xsync.NewMapOf[fieldTagsKey, []fieldTags]()
+
+func (r *Reflector) fieldTagsForType(t reflect.Type) []fieldTags {
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	key := fieldTagsKey{
+		t:       t,
+		tagName: r.fieldNameTag(),
+	}
+	if tags, ok := cachedFieldTags.Load(key); ok {
+		return tags
+	}
+	tags := make([]fieldTags, t.NumField())
+	for i := 0; i < t.NumField(); i++ {
+		tags[i] = r.parseFieldTagsForField(t.Field(i))
+	}
+	cachedFieldTags.Store(key, tags)
+	return tags
+}
+
+func (r *Reflector) parseFieldTagsForField(f reflect.StructField) fieldTags {
 	return fieldTags{
 		jsonTags:        strings.Split(f.Tag.Get(r.fieldNameTag()), ","),
 		jsonschemaTags:  splitOnUnescapedCommas(f.Tag.Get("jsonschema")),
