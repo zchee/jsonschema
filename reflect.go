@@ -523,6 +523,10 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 
 	if st.Required == nil {
 		capHint := t.NumField()
+		const requiredPreallocThreshold = 10
+		if capHint < requiredPreallocThreshold {
+			capHint = requiredPreallocThreshold
+		}
 		if requiredCap > capHint {
 			capHint = requiredCap
 		}
@@ -758,6 +762,7 @@ func (r *Reflector) loadSchemaFromCache(t reflect.Type) *Schema {
 		return nil
 	}
 	if cached, ok := cache.Load(key); ok {
+		r.promoteCacheKey(key)
 		return cloneSchema(cached)
 	}
 	return nil
@@ -780,12 +785,32 @@ func (r *Reflector) storeSchemaInCache(t reflect.Type, s *Schema) {
 	if r.MaxSchemaCacheEntries > 0 {
 		r.schemaCacheMu.Lock()
 		r.schemaCacheOrder = append(r.schemaCacheOrder, key)
-		if len(r.schemaCacheOrder) > r.MaxSchemaCacheEntries {
-			evict := r.schemaCacheOrder[0]
-			r.schemaCacheOrder = r.schemaCacheOrder[1:]
-			cache.Delete(evict)
-		}
+		r.evictIfNeeded(cache)
 		r.schemaCacheMu.Unlock()
+	}
+}
+
+func (r *Reflector) promoteCacheKey(key schemaCacheKey) {
+	if r.MaxSchemaCacheEntries == 0 || r.schemaCache == nil {
+		return
+	}
+	r.schemaCacheMu.Lock()
+	defer r.schemaCacheMu.Unlock()
+	for i, k := range r.schemaCacheOrder {
+		if k == key {
+			// move to end
+			copy(r.schemaCacheOrder[i:], r.schemaCacheOrder[i+1:])
+			r.schemaCacheOrder[len(r.schemaCacheOrder)-1] = key
+			return
+		}
+	}
+}
+
+func (r *Reflector) evictIfNeeded(cache *xsync.MapOf[schemaCacheKey, *Schema]) {
+	for r.MaxSchemaCacheEntries > 0 && len(r.schemaCacheOrder) > r.MaxSchemaCacheEntries {
+		evict := r.schemaCacheOrder[0]
+		r.schemaCacheOrder = r.schemaCacheOrder[1:]
+		cache.Delete(evict)
 	}
 }
 
