@@ -15,6 +15,7 @@ s := r.ReflectFromType(reflect.TypeOf(MyType{}))
 
 ## Guidance
 - Keep `EnableSchemaCache` off by default for general workloads.
+- Turn it on only when *the same types are reflected many times* (e.g., repeated codegen or startup warming).
 - Set `MaxSchemaCacheEntries` to a small bound (e.g., 64–256) to avoid unbounded growth.
 - Cache entries are cloned on load to prevent caller mutation from polluting the cache.
 - Cache uses LRU-style promotion; oldest entries evicted when over the limit.
