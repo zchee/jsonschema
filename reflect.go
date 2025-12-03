@@ -458,7 +458,7 @@ func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type, s *Sc
 
 	r.addDefinition(definitions, t, s)
 	s.Type = "object"
-	s.Properties = NewProperties()
+	s.Properties = NewProperties(t.NumField())
 	s.Description = r.lookupComment(t, "")
 	if r.AssignAnchor {
 		s.Anchor = t.Name()
@@ -1153,26 +1153,36 @@ func (r *Reflector) typeName(t reflect.Type) string {
 // Split on commas that are not preceded by `\`.
 // This way, we prevent splitting regexes
 func splitOnUnescapedCommas(tagString string) []string {
-	ret := make([]string, 0)
-	separated := strings.Split(tagString, ",")
-	ret = append(ret, separated[0])
-	i := 0
-	for _, nextTag := range separated[1:] {
-		if len(ret[i]) == 0 {
-			ret = append(ret, nextTag)
-			i++
+	if tagString == "" {
+		return []string{""}
+	}
+
+	parts := make([]string, 0, 4)
+	buf := make([]byte, 0, len(tagString))
+	prevEsc := false
+
+	for i := 0; i < len(tagString); i++ {
+		ch := tagString[i]
+		if ch == ',' {
+			if prevEsc {
+				// Remove escaping backslash and treat comma literally.
+				buf = buf[:len(buf)-1]
+				buf = append(buf, ',')
+				prevEsc = false
+				continue
+			}
+			parts = append(parts, string(buf))
+			buf = buf[:0]
+			prevEsc = false
 			continue
 		}
 
-		if ret[i][len(ret[i])-1] == '\\' {
-			ret[i] = ret[i][:len(ret[i])-1] + "," + nextTag
-		} else {
-			ret = append(ret, nextTag)
-			i++
-		}
+		buf = append(buf, ch)
+		prevEsc = ch == '\\'
 	}
 
-	return ret
+	parts = append(parts, string(buf))
+	return parts
 }
 
 func fullyQualifiedTypeName(t reflect.Type) string {

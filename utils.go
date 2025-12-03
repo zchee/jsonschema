@@ -20,7 +20,10 @@ func ToSnakeCase(str string) string {
 }
 
 // NewProperties is a helper method to instantiate a new properties ordered
-// map.
-func NewProperties() *orderedmap.OrderedMap[string, *Schema] {
+// map. Optional capacity hint reduces reallocations for wide structs.
+func NewProperties(capacity ...int) *orderedmap.OrderedMap[string, *Schema] {
+	if len(capacity) > 0 && capacity[0] > 0 {
+		return orderedmap.New[string, *Schema](capacity[0])
+	}
 	return orderedmap.New[string, *Schema]()
 }
