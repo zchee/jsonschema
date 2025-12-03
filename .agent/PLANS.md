@@ -99,6 +99,6 @@
 
 ## Status (2025-12-04 later)
 - Implemented optional cache size bound + LRU promotion; cache still default-off. Added `BenchmarkReflectRepeatedTypeCachedLimited` to measure capped-cache scenarios.
-- Tested higher-count benches (count=10/20, benchtime=2x/5x). Findings: cache ON or capped can improve sec/op on repeated reflections but increases B/op; WideStruct unaffected. Due to noise and mixed trade-offs, kept cache default-off and left further tuning for opt-in users.
-- Tried unique/weak approaches; reverted due to regressions (unique) or correctness concerns (shallow cache). Current code mirrors commit 40eac9a with LRU additions.
-- Next actions: (1) document cache usage guidance (when to enable, set MaxSchemaCacheEntries), (2) consider conditional Required prealloc threshold tuning if small structs show regressions, (3) clean up bench artifacts when not needed.
+- High-count benches (count=20, benchtime=5x) show cache ON + limit can cut repeated-reflection time/allocs: `ReflectRepeatedTypeCachedLimited` 35.97µs→17.24µs, B/op 81.20KiB→55.84KiB, allocs 291→202 (p=0.000 for time). Effect is workload-dependent; memory still higher than cache-off.
+- Unique/weak broad application was reverted (regressions or correctness risks). Current code includes LRU cache option and Required prealloc threshold.
+- Next actions: (1) finalize README guidance for cache (when/how to enable, MaxSchemaCacheEntries suggestion), (2) optionally tune Required threshold if small structs regress, (3) clean /tmp bench artifacts when no longer needed.
