@@ -477,7 +477,9 @@ func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type, s *Sc
 
 	r.addDefinition(definitions, t, s)
 	s.Type = "object"
-	s.Properties = NewProperties(t.NumField())
+	fieldTagsCache := r.fieldTagsForType(t)
+	propCap := r.estimatePropertyCapacity(t, fieldTagsCache, nil)
+	s.Properties = NewProperties(propCap)
 	s.Description = r.lookupComment(t, "")
 	if r.AssignAnchor {
 		s.Anchor = t.Name()
@@ -494,11 +496,11 @@ func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type, s *Sc
 		}
 	}
 	if !ignored {
-		r.reflectStructFields(s, definitions, t)
+		r.reflectStructFields(s, definitions, t, fieldTagsCache)
 	}
 }
 
-func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t reflect.Type) {
+func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t reflect.Type, fieldTagsCache []fieldTags) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -510,7 +512,9 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		st.Required = make([]string, 0, t.NumField())
 	}
 
-	fieldTagsCache := r.fieldTagsForType(t)
+	if fieldTagsCache == nil {
+		fieldTagsCache = r.fieldTagsForType(t)
+	}
 
 	var getFieldDocString customGetFieldDocString
 	if t.Implements(customStructGetFieldDocString) {
@@ -534,7 +538,7 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		// current type should inherit properties of anonymous one
 		if name == "" {
 			if shouldEmbed {
-				r.reflectStructFields(st, definitions, f.Type)
+				r.reflectStructFields(st, definitions, f.Type, nil)
 			}
 			return
 		}
@@ -598,6 +602,58 @@ type fieldTagsKey struct {
 }
 
 var cachedFieldTags = xsync.NewMapOf[fieldTagsKey, []fieldTags]()
+
+func (r *Reflector) estimatePropertyCapacity(t reflect.Type, tags []fieldTags, seen map[reflect.Type]bool) int {
+	if t.Kind() == reflect.Ptr {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return 0
+	}
+	if tags == nil || len(tags) != t.NumField() {
+		tags = r.fieldTagsForType(t)
+	}
+	if seen == nil {
+		seen = make(map[reflect.Type]bool)
+	}
+	if seen[t] {
+		return 0
+	}
+	seen[t] = true
+
+	cap := 0
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		name, shouldEmbed, _, _ := r.reflectFieldName(f, tags[i])
+		if name != "" {
+			cap++
+			continue
+		}
+		if shouldEmbed {
+			embeddedTags := r.fieldTagsForType(f.Type)
+			cap += r.estimatePropertyCapacity(f.Type, embeddedTags, seen)
+		}
+	}
+
+	if r.AdditionalFields != nil {
+		if af := r.AdditionalFields(t); af != nil {
+			for _, sf := range af {
+				tags := r.parseFieldTagsForField(sf)
+				name, shouldEmbed, _, _ := r.reflectFieldName(sf, tags)
+				if name != "" {
+					cap++
+					continue
+				}
+				if shouldEmbed {
+					embeddedTags := r.fieldTagsForType(sf.Type)
+					cap += r.estimatePropertyCapacity(sf.Type, embeddedTags, seen)
+				}
+			}
+		}
+	}
+
+	return cap
+}
 
 func (r *Reflector) fieldTagsForType(t reflect.Type) []fieldTags {
 	if t.Kind() != reflect.Struct {
