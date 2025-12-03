@@ -75,8 +75,8 @@ type TestUser struct {
 	IgnoredCounter int  `json:"-"`
 
 	// Tests for RFC draft-wright-json-schema-validation-00, section 7.3
-	BirthDate time.Time `json:"birth_date,omitempty"`
-	Website   url.URL   `json:"website,omitempty"`
+	BirthDate time.Time `json:"birth_date,omitzero"`
+	Website   url.URL   `json:"website,omitzero"`
 	IPAddress net.IP    `json:"network_address,omitempty"`
 
 	// Tests for RFC draft-wright-json-schema-hyperschema-00, section 4
@@ -349,18 +349,12 @@ func TestReflector(t *testing.T) {
 
 func TestReflectFromType(t *testing.T) {
 	r := new(Reflector)
-	tu := new(TestUser)
-	typ := reflect.TypeOf(tu)
+	typ := reflect.TypeFor[*TestUser]()
 
 	s := r.ReflectFromType(typ)
 	assert.EqualValues(t, "https://github.com/invopop/jsonschema/test-user", s.ID)
 
-	x := struct {
-		Test string
-	}{
-		Test: "foo",
-	}
-	typ = reflect.TypeOf(x)
+	typ = reflect.TypeFor[struct{ Test string }]()
 	s = r.Reflect(typ)
 	assert.Empty(t, s.ID)
 }
@@ -384,7 +378,7 @@ func TestSchemaGeneration(t *testing.T) {
 		{&RootAnyOf{}, &Reflector{RequiredFromJSONSchemaTags: true}, "fixtures/anyof.json"},
 		{&CustomTypeField{}, &Reflector{
 			Mapper: func(i reflect.Type) *Schema {
-				if i == reflect.TypeOf(CustomTime{}) {
+				if i == reflect.TypeFor[CustomTime]() {
 					return &Schema{
 						Type:   "string",
 						Format: "date-time",
@@ -397,9 +391,9 @@ func TestSchemaGeneration(t *testing.T) {
 		{LookupUser{}, &Reflector{
 			Lookup: func(i reflect.Type) ID {
 				switch i {
-				case reflect.TypeOf(LookupUser{}):
+				case reflect.TypeFor[LookupUser]():
 					return ID("https://example.com/schemas/lookup-user")
-				case reflect.TypeOf(LookupName{}):
+				case reflect.TypeFor[LookupName]():
 					return ID("https://example.com/schemas/lookup-name")
 				}
 				return EmptyID
@@ -411,9 +405,9 @@ func TestSchemaGeneration(t *testing.T) {
 			AssignAnchor:   true,
 			Lookup: func(i reflect.Type) ID {
 				switch i {
-				case reflect.TypeOf(LookupUser{}):
+				case reflect.TypeFor[LookupUser]():
 					return ID("https://example.com/schemas/lookup-user")
-				case reflect.TypeOf(LookupName{}):
+				case reflect.TypeFor[LookupName]():
 					return ID("https://example.com/schemas/lookup-name")
 				}
 				return EmptyID
@@ -431,7 +425,7 @@ func TestSchemaGeneration(t *testing.T) {
 				return []reflect.StructField{
 					{
 						Name:      "Addr",
-						Type:      reflect.TypeOf((*net.IP)(nil)).Elem(),
+						Type:      reflect.TypeFor[net.IP](),
 						Tag:       "json:\"ip_addr\"",
 						Anonymous: false,
 					},

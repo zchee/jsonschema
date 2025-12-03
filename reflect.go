@@ -1131,7 +1131,8 @@ func requiredFromJSONTags(tags []string, val *bool) {
 	}
 
 	for _, tag := range tags[1:] {
-		if tag == "omitempty" {
+		switch tag {
+		case "omitempty", "omitzero":
 			*val = false
 			return
 		}
