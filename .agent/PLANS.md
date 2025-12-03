@@ -102,3 +102,8 @@
 - High-count benches (count=20, benchtime=5x) show cache ON + limit can cut repeated-reflection time/allocs: `ReflectRepeatedTypeCachedLimited` 35.97µs→17.24µs, B/op 81.20KiB→55.84KiB, allocs 291→202 (p=0.000 for time). Effect is workload-dependent; memory still higher than cache-off.
 - Unique/weak broad application was reverted (regressions or correctness risks). Current code includes LRU cache option and Required prealloc threshold.
 - Next actions: (1) finalize README guidance for cache (when/how to enable, MaxSchemaCacheEntries suggestion), (2) optionally tune Required threshold if small structs regress, (3) clean /tmp bench artifacts when no longer needed.
+
+## Status (2025-12-04 final)
+- Cache guidance documented in README_CACHE.md (when/how, suggested MaxSchemaCacheEntries, bench results). Cache remains default-off.
+- Required prealloc threshold kept at 10; no regressions seen in current benches. Leave as-is unless future small-struct regressions appear.
+- Bench artifacts: /tmp/gobench_before_fixedset.txt, /tmp/gobench_after_plan.txt (latest set). Others can be deleted when no longer needed.
