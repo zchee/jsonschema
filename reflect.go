@@ -498,11 +498,12 @@ func (r *Reflector) reflectStruct(definitions Definitions, t reflect.Type, s *Sc
 		}
 	}
 	if !ignored {
-		r.reflectStructFields(s, definitions, t, fieldTagsCache)
+		propCap := r.estimatePropertyCapacity(t, fieldTagsCache, nil)
+		r.reflectStructFields(s, definitions, t, fieldTagsCache, propCap)
 	}
 }
 
-func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t reflect.Type, fieldTagsCache []fieldTags) {
+func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t reflect.Type, fieldTagsCache []fieldTags, requiredCap int) {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem()
 	}
@@ -511,7 +512,11 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 	}
 
 	if st.Required == nil {
-		st.Required = make([]string, 0, t.NumField())
+		capHint := t.NumField()
+		if requiredCap > capHint {
+			capHint = requiredCap
+		}
+		st.Required = make([]string, 0, capHint)
 	}
 
 	if fieldTagsCache == nil {
@@ -540,7 +545,7 @@ func (r *Reflector) reflectStructFields(st *Schema, definitions Definitions, t r
 		// current type should inherit properties of anonymous one
 		if name == "" {
 			if shouldEmbed {
-				r.reflectStructFields(st, definitions, f.Type, nil)
+				r.reflectStructFields(st, definitions, f.Type, nil, 0)
 			}
 			return
 		}
