@@ -537,6 +537,31 @@ func TestSplitOnUnescapedCommas(t *testing.T) {
 	}
 }
 
+func TestSchemaCacheIsolation(t *testing.T) {
+	r := &Reflector{EnableSchemaCache: true}
+	s1 := r.Reflect(&TestUser{})
+	require.NotNil(t, s1)
+	s1.Title = "mutated"
+	require.NotNil(t, s1.Definitions["TestUser"])
+	s1.Definitions["TestUser"].Description = "changed"
+
+	s2 := r.Reflect(&TestUser{})
+	require.Empty(t, s2.Title)
+	require.NotNil(t, s2.Definitions["TestUser"])
+	require.NotEqual(t, "changed", s2.Definitions["TestUser"].Description)
+}
+
+func TestSchemaCacheFingerprintDiffersOnConfig(t *testing.T) {
+	r := &Reflector{EnableSchemaCache: true}
+	s1 := r.Reflect(&TestUser{})
+
+	r.BaseSchemaID = "https://example.com/schemas"
+	s2 := r.Reflect(&TestUser{})
+
+	require.NotEqual(t, s1.ID, s2.ID)
+	require.Equal(t, ID("https://example.com/schemas/test-user"), s2.ID)
+}
+
 func TestArrayExtraTags(t *testing.T) {
 	type URIArray struct {
 		TestURIs []string `jsonschema:"type=array,format=uri,pattern=^https://.*"`

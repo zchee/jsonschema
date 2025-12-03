@@ -9,6 +9,7 @@ package jsonschema
 import (
 	"bytes"
 	"encoding/json"
+	"hash/fnv"
 	"net"
 	"net/url"
 	"reflect"
@@ -170,6 +171,14 @@ type Reflector struct {
 	//
 	// See also: AddGoComments, LookupComment
 	CommentMap map[string]string
+
+	// EnableSchemaCache toggles per-Reflector schema memoization. When true,
+	// schemas are cached per type and reflector configuration fingerprint, and
+	// each call returns a cloned copy to avoid mutation sharing. Default is
+	// false to preserve existing behaviour.
+	EnableSchemaCache bool
+
+	schemaCache *xsync.MapOf[schemaCacheKey, *Schema]
 }
 
 // Reflect reflects to Schema from a value.
@@ -181,6 +190,12 @@ func (r *Reflector) Reflect(v any) *Schema {
 func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	if t.Kind() == reflect.Ptr {
 		t = t.Elem() // re-assign from pointer
+	}
+
+	if r.EnableSchemaCache {
+		if cached := r.loadSchemaFromCache(t); cached != nil {
+			return cached
+		}
 	}
 
 	name := r.typeName(t)
@@ -214,6 +229,10 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 	s.Version = Version
 	if !r.DoNotReference {
 		s.Definitions = definitions
+	}
+
+	if r.EnableSchemaCache {
+		r.storeSchemaInCache(t, s)
 	}
 
 	return s
@@ -651,6 +670,98 @@ func (r *Reflector) lookupID(t reflect.Type) ID {
 
 	}
 	return EmptyID
+}
+
+type schemaCacheKey struct {
+	t           reflect.Type
+	fingerprint uint64
+}
+
+func (r *Reflector) loadSchemaFromCache(t reflect.Type) *Schema {
+	cache := r.getSchemaCache()
+	key := schemaCacheKey{
+		t:           t,
+		fingerprint: r.cacheFingerprint(),
+	}
+	if cache == nil {
+		return nil
+	}
+	if cached, ok := cache.Load(key); ok {
+		return cloneSchema(cached)
+	}
+	return nil
+}
+
+func (r *Reflector) storeSchemaInCache(t reflect.Type, s *Schema) {
+	cache := r.getSchemaCache()
+	if cache == nil {
+		return
+	}
+	key := schemaCacheKey{
+		t:           t,
+		fingerprint: r.cacheFingerprint(),
+	}
+	cache.Store(key, cloneSchema(s))
+}
+
+func (r *Reflector) getSchemaCache() *xsync.MapOf[schemaCacheKey, *Schema] {
+	if !r.EnableSchemaCache {
+		return nil
+	}
+	if r.schemaCache == nil {
+		r.schemaCache = xsync.NewMapOf[schemaCacheKey, *Schema]()
+	}
+	return r.schemaCache
+}
+
+func (r *Reflector) cacheFingerprint() uint64 {
+	h := fnv.New64a()
+	writeBool := func(b bool) {
+		if b {
+			h.Write([]byte{1})
+			return
+		}
+		h.Write([]byte{0})
+	}
+
+	writeBool(r.Anonymous)
+	writeBool(r.AssignAnchor)
+	writeBool(r.AllowAdditionalProperties)
+	writeBool(r.RequiredFromJSONSchemaTags)
+	writeBool(r.DoNotReference)
+	writeBool(r.ExpandedStruct)
+	h.Write([]byte(r.FieldNameTag))
+	h.Write([]byte(r.BaseSchemaID))
+
+	writeUintptr := func(ptr uintptr) {
+		h.Write([]byte(strconv.FormatUint(uint64(ptr), 10)))
+	}
+
+	if r.Lookup != nil {
+		writeUintptr(reflect.ValueOf(r.Lookup).Pointer())
+	}
+	if r.Mapper != nil {
+		writeUintptr(reflect.ValueOf(r.Mapper).Pointer())
+	}
+	if r.Namer != nil {
+		writeUintptr(reflect.ValueOf(r.Namer).Pointer())
+	}
+	if r.KeyNamer != nil {
+		writeUintptr(reflect.ValueOf(r.KeyNamer).Pointer())
+	}
+	if r.AdditionalFields != nil {
+		writeUintptr(reflect.ValueOf(r.AdditionalFields).Pointer())
+	}
+	if r.LookupComment != nil {
+		writeUintptr(reflect.ValueOf(r.LookupComment).Pointer())
+	}
+
+	if r.CommentMap != nil {
+		h.Write([]byte(strconv.FormatInt(int64(len(r.CommentMap)), 10)))
+		writeUintptr(reflect.ValueOf(r.CommentMap).Pointer())
+	}
+
+	return h.Sum64()
 }
 
 func (t *Schema) structKeywordsFromTags(f reflect.StructField, parent *Schema, propertyName string, tags fieldTags) {
@@ -1187,4 +1298,126 @@ func splitOnUnescapedCommas(tagString string) []string {
 
 func fullyQualifiedTypeName(t reflect.Type) string {
 	return t.PkgPath() + "." + t.Name()
+}
+
+func cloneSchema(s *Schema) *Schema {
+	if s == nil {
+		return nil
+	}
+
+	ns := *s
+
+	if s.AllOf != nil {
+		ns.AllOf = cloneSchemaSlice(s.AllOf)
+	}
+	if s.AnyOf != nil {
+		ns.AnyOf = cloneSchemaSlice(s.AnyOf)
+	}
+	if s.OneOf != nil {
+		ns.OneOf = cloneSchemaSlice(s.OneOf)
+	}
+	if s.Not != nil {
+		ns.Not = cloneSchema(s.Not)
+	}
+	if s.If != nil {
+		ns.If = cloneSchema(s.If)
+	}
+	if s.Then != nil {
+		ns.Then = cloneSchema(s.Then)
+	}
+	if s.Else != nil {
+		ns.Else = cloneSchema(s.Else)
+	}
+	if s.DependentSchemas != nil {
+		ns.DependentSchemas = make(map[string]*Schema, len(s.DependentSchemas))
+		for k, v := range s.DependentSchemas {
+			ns.DependentSchemas[k] = cloneSchema(v)
+		}
+	}
+	if s.PrefixItems != nil {
+		ns.PrefixItems = cloneSchemaSlice(s.PrefixItems)
+	}
+	if s.Items != nil {
+		ns.Items = cloneSchema(s.Items)
+	}
+	if s.Contains != nil {
+		ns.Contains = cloneSchema(s.Contains)
+	}
+	if s.Properties != nil {
+		props := NewProperties(s.Properties.Len())
+		for pair := s.Properties.Oldest(); pair != nil; pair = pair.Next() {
+			props.Set(pair.Key, cloneSchema(pair.Value))
+		}
+		ns.Properties = props
+	}
+	if s.PatternProperties != nil {
+		ns.PatternProperties = make(map[string]*Schema, len(s.PatternProperties))
+		for k, v := range s.PatternProperties {
+			ns.PatternProperties[k] = cloneSchema(v)
+		}
+	}
+	if s.AdditionalProperties != nil {
+		ns.AdditionalProperties = cloneSchema(s.AdditionalProperties)
+	}
+	if s.PropertyNames != nil {
+		ns.PropertyNames = cloneSchema(s.PropertyNames)
+	}
+	if s.Enum != nil {
+		enumCopy := make([]any, len(s.Enum))
+		copy(enumCopy, s.Enum)
+		ns.Enum = enumCopy
+	}
+	if s.Required != nil {
+		ns.Required = copyStringSlice(s.Required)
+	}
+	if s.DependentRequired != nil {
+		ns.DependentRequired = make(map[string][]string, len(s.DependentRequired))
+		for k, v := range s.DependentRequired {
+			ns.DependentRequired[k] = copyStringSlice(v)
+		}
+	}
+	if s.ContentSchema != nil {
+		ns.ContentSchema = cloneSchema(s.ContentSchema)
+	}
+	if s.Examples != nil {
+		examples := make([]any, len(s.Examples))
+		copy(examples, s.Examples)
+		ns.Examples = examples
+	}
+	if s.Definitions != nil {
+		defs := make(Definitions, len(s.Definitions))
+		for k, v := range s.Definitions {
+			defs[k] = cloneSchema(v)
+		}
+		ns.Definitions = defs
+	}
+	if s.Extras != nil {
+		extras := make(map[string]any, len(s.Extras))
+		for k, v := range s.Extras {
+			extras[k] = v
+		}
+		ns.Extras = extras
+	}
+
+	return &ns
+}
+
+func cloneSchemaSlice(in []*Schema) []*Schema {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]*Schema, len(in))
+	for i := range in {
+		out[i] = cloneSchema(in[i])
+	}
+	return out
+}
+
+func copyStringSlice(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
 }
