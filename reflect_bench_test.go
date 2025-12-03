@@ -102,7 +102,7 @@ func BenchmarkReflectWideStruct(b *testing.B) {
 func BenchmarkReflectRepeatedType(b *testing.B) {
 	b.ReportAllocs()
 	r := &Reflector{}
-	t := reflect.TypeOf(TestUser{})
+	t := reflect.TypeFor[TestUser]()
 	for b.Loop() {
 		_ = r.ReflectFromType(t)
 	}

@@ -44,7 +44,7 @@ func prepareCustomCommentReflector(t *testing.T) *Reflector {
 	t.Helper()
 	r := new(Reflector)
 	r.LookupComment = func(t reflect.Type, f string) string {
-		if t != reflect.TypeOf(examples.User{}) {
+		if t != reflect.TypeFor[examples.User]() {
 			// To test the interaction between a custom LookupComment function and the
 			// AddGoComments function, we only override comments for the User type.
 			return ""

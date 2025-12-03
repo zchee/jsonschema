@@ -10,9 +10,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"hash/fnv"
+	"maps"
 	"net"
 	"net/url"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -46,11 +48,11 @@ type propertyAliasSchemaImpl interface {
 	JSONSchemaProperty(prop string) any
 }
 
-var customAliasSchema = reflect.TypeOf((*aliasSchemaImpl)(nil)).Elem()
-var customPropertyAliasSchema = reflect.TypeOf((*propertyAliasSchemaImpl)(nil)).Elem()
+var customAliasSchema = reflect.TypeFor[aliasSchemaImpl]()
+var customPropertyAliasSchema = reflect.TypeFor[propertyAliasSchemaImpl]()
 
-var customType = reflect.TypeOf((*customSchemaImpl)(nil)).Elem()
-var extendType = reflect.TypeOf((*extendSchemaImpl)(nil)).Elem()
+var customType = reflect.TypeFor[customSchemaImpl]()
+var extendType = reflect.TypeFor[extendSchemaImpl]()
 
 // customSchemaGetFieldDocString
 type customSchemaGetFieldDocString interface {
@@ -59,7 +61,7 @@ type customSchemaGetFieldDocString interface {
 
 type customGetFieldDocString func(fieldName string) string
 
-var customStructGetFieldDocString = reflect.TypeOf((*customSchemaGetFieldDocString)(nil)).Elem()
+var customStructGetFieldDocString = reflect.TypeFor[customSchemaGetFieldDocString]()
 
 // Reflect reflects to Schema from a value using the default Reflector
 func Reflect(v any) *Schema {
@@ -241,23 +243,23 @@ func (r *Reflector) ReflectFromType(t reflect.Type) *Schema {
 // Available Go defined types for JSON Schema Validation.
 // RFC draft-wright-json-schema-validation-00, section 7.3
 var (
-	timeType = reflect.TypeOf(time.Time{}) // date-time RFC section 7.3.1
-	ipType   = reflect.TypeOf(net.IP{})    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
-	uriType  = reflect.TypeOf(url.URL{})   // uri RFC section 7.3.6
+	timeType = reflect.TypeFor[time.Time]() // date-time RFC section 7.3.1
+	ipType   = reflect.TypeFor[net.IP]()    // ipv4 and ipv6 RFC section 7.3.4, 7.3.5
+	uriType  = reflect.TypeFor[url.URL]()   // uri RFC section 7.3.6
 )
 
 // Byte slices will be encoded as base64
-var byteSliceType = reflect.TypeOf([]byte(nil))
+var byteSliceType = reflect.TypeFor[[]byte]()
 
 // Except for json.RawMessage
-var rawMessageType = reflect.TypeOf(json.RawMessage{})
+var rawMessageType = reflect.TypeFor[json.RawMessage]()
 
 // Go code generated from protobuf enum types should fulfil this interface.
 type protoEnum interface {
 	EnumDescriptor() ([]byte, []int)
 }
 
-var protoEnumType = reflect.TypeOf((*protoEnum)(nil)).Elem()
+var protoEnumType = reflect.TypeFor[protoEnum]()
 
 // SetBaseSchemaID is a helper use to be able to set the reflectors base
 // schema ID from a string as opposed to then ID instance.
@@ -683,10 +685,8 @@ func (r *Reflector) parseFieldTagsForField(f reflect.StructField) fieldTags {
 }
 
 func appendUniqueString(base []string, value string) []string {
-	for _, v := range base {
-		if v == value {
-			return base
-		}
+	if slices.Contains(base, value) {
+		return base
 	}
 	return append(base, value)
 }
@@ -897,7 +897,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				subSchema.OneOf = make([]*Schema, 0, 1)
 			}
 			subSchema.Ref = ""
-			for _, r := range strings.Split(val, ";") {
+			for r := range strings.SplitSeq(val, ";") {
 				subSchema.OneOf = append(subSchema.OneOf, &Schema{Ref: r})
 			}
 		case "oneof_type":
@@ -905,7 +905,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				t.OneOf = make([]*Schema, 0, 1)
 			}
 			t.Type = ""
-			for _, ty := range strings.Split(val, ";") {
+			for ty := range strings.SplitSeq(val, ";") {
 				t.OneOf = append(t.OneOf, &Schema{Type: ty})
 			}
 		case "anyof_ref":
@@ -917,7 +917,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				subSchema.AnyOf = make([]*Schema, 0, 1)
 			}
 			subSchema.Ref = ""
-			for _, r := range strings.Split(val, ";") {
+			for r := range strings.SplitSeq(val, ";") {
 				subSchema.AnyOf = append(subSchema.AnyOf, &Schema{Ref: r})
 			}
 		case "anyof_type":
@@ -925,7 +925,7 @@ func (t *Schema) genericKeywords(tags []string, parent *Schema, propertyName str
 				t.AnyOf = make([]*Schema, 0, 1)
 			}
 			t.Type = ""
-			for _, ty := range strings.Split(val, ";") {
+			for ty := range strings.SplitSeq(val, ";") {
 				t.AnyOf = append(t.AnyOf, &Schema{Type: ty})
 			}
 		default:
@@ -1155,12 +1155,7 @@ func nullableFromJSONSchemaTags(tags []string) bool {
 	if ignoredByJSONSchemaTags(tags) {
 		return false
 	}
-	for _, tag := range tags {
-		if tag == "nullable" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tags, "nullable")
 }
 
 func ignoredByJSONTags(tags []string) bool {
@@ -1172,12 +1167,7 @@ func ignoredByJSONSchemaTags(tags []string) bool {
 }
 
 func inlinedByJSONTags(tags []string) bool {
-	for _, tag := range tags[1:] {
-		if tag == "inline" {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(tags[1:], "inline")
 }
 
 // toJSONNumber converts string to *json.Number.
@@ -1450,9 +1440,7 @@ func cloneSchema(s *Schema) *Schema {
 	}
 	if s.Extras != nil {
 		extras := make(map[string]any, len(s.Extras))
-		for k, v := range s.Extras {
-			extras[k] = v
-		}
+		maps.Copy(extras, s.Extras)
 		ns.Extras = extras
 	}
 
