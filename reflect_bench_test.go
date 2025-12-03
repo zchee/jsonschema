@@ -116,3 +116,15 @@ func BenchmarkReflectRepeatedTypeCached(b *testing.B) {
 		_ = r.ReflectFromType(t)
 	}
 }
+
+func BenchmarkReflectRepeatedTypeCachedLimited(b *testing.B) {
+	b.ReportAllocs()
+	r := &Reflector{
+		EnableSchemaCache:     true,
+		MaxSchemaCacheEntries: 64,
+	}
+	t := reflect.TypeFor[TestUser]()
+	for b.Loop() {
+		_ = r.ReflectFromType(t)
+	}
+}

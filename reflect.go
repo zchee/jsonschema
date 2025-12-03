@@ -17,6 +17,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/puzpuzpuz/xsync/v4"
@@ -180,7 +181,16 @@ type Reflector struct {
 	// false to preserve existing behaviour.
 	EnableSchemaCache bool
 
+	// MaxSchemaCacheEntries bounds the schema cache size when EnableSchemaCache
+	// is true. Zero means unbounded (current behaviour). A small positive value
+	// limits memory growth at the cost of occasional cache misses (FIFO
+	// eviction).
+	MaxSchemaCacheEntries int
+
 	schemaCache *xsync.MapOf[schemaCacheKey, *Schema]
+
+	schemaCacheOrder []schemaCacheKey
+	schemaCacheMu    sync.Mutex
 }
 
 // Reflect reflects to Schema from a value.
@@ -762,7 +772,21 @@ func (r *Reflector) storeSchemaInCache(t reflect.Type, s *Schema) {
 		t:           t,
 		fingerprint: r.cacheFingerprint(),
 	}
+	if _, exists := cache.Load(key); exists {
+		return
+	}
 	cache.Store(key, cloneSchema(s))
+
+	if r.MaxSchemaCacheEntries > 0 {
+		r.schemaCacheMu.Lock()
+		r.schemaCacheOrder = append(r.schemaCacheOrder, key)
+		if len(r.schemaCacheOrder) > r.MaxSchemaCacheEntries {
+			evict := r.schemaCacheOrder[0]
+			r.schemaCacheOrder = r.schemaCacheOrder[1:]
+			cache.Delete(evict)
+		}
+		r.schemaCacheMu.Unlock()
+	}
 }
 
 func (r *Reflector) getSchemaCache() *xsync.MapOf[schemaCacheKey, *Schema] {
